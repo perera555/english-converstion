@@ -29,6 +29,8 @@ interface Result {
 }
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** A spoken line counts as correct from this score. */
+const LINE_PASS = 70;
 
 export default function Player({ conv, videos, search }: { conv: Conversation; videos: RealVideo[]; search: string }) {
   const voices = useVoices();
@@ -57,8 +59,9 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
   const runRef = useRef(0);
   const cancelRef = useRef<(() => void) | null>(null);
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const settings = useRef({ voiceA, voiceB, rate, mode, role, voices, rounds });
-  settings.current = { voiceA, voiceB, rate, mode, role, voices, rounds };
+  const [untilCorrect, setUntilCorrect] = useState(true);
+  const settings = useRef({ voiceA, voiceB, rate, mode, role, voices, rounds, untilCorrect });
+  settings.current = { voiceA, voiceB, rate, mode, role, voices, rounds, untilCorrect };
 
   useEffect(() => {
     if (voices.length && !voiceA) {
@@ -162,8 +165,22 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
       }
       if (m === "shadow" || userTurn) {
         await wait(150);
-        const sc = await listenLine(i, token);
+        let sc = await listenLine(i, token);
         if (runRef.current !== token) return;
+        // Repeat the line until it's correct: show the mistakes, play it again, listen again.
+        let tries = 1;
+        while (sc !== null && sc < LINE_PASS && settings.current.untilCorrect && tries < 5) {
+          setNotice(`🔁 ${sc}%: not quite yet. Red words were missed. Listen, then say the line again (try ${tries + 1} of 5).`);
+          await wait(900);
+          if (runRef.current !== token) return;
+          await speakLine(i, token);
+          if (runRef.current !== token) return;
+          await wait(150);
+          sc = await listenLine(i, token);
+          if (runRef.current !== token) return;
+          tries++;
+        }
+        if (sc !== null && sc >= LINE_PASS && tries > 1) setNotice(`✅ ${sc}%: corrected! Well done.`);
         if (sc !== null) scores.push(sc);
       }
       await wait(m === "video" ? 500 : 280);
@@ -333,6 +350,12 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
         >
           {showText ? "👁 Text on" : "🙈 Text hidden"}
         </button>
+        {(mode === "shadow" || mode === "roleplay") && (
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold">
+            <input type="checkbox" checked={untilCorrect} onChange={(e) => setUntilCorrect(e.target.checked)} className="accent-emerald-400" />
+            🔁 Repeat each line until correct
+          </label>
+        )}
         <details className="ml-auto text-sm">
           <summary className="cursor-pointer list-none rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold hover:bg-white/15">
             🔊 Voices

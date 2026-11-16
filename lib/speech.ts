@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { scoreSpeech, tokenize } from "./score";
 import { pingActivity } from "./practice";
-import { getEngine, isBuiltin, listenBuiltin, listenSelf } from "./whisper";
+import { getEngine, isBuiltin, listenBuiltin, listenSelf, setEngine } from "./whisper";
 
 /* ---------------------------------------------------------------- voices */
 
@@ -207,7 +207,7 @@ export function micErrorMessage(error: string | undefined, transcript: string): 
     return "🚫 Microphone is blocked. Click the 🔒 / mic icon in the address bar, choose Allow, then try again.";
   if (error === "audio-capture") return "🎙️ No microphone found. Plug in your headset or earbuds, then open 🎧 Mic check at the top to test it.";
   if (error === "network")
-    return "🌐 The speech service couldn't be reached. Check your internet. Voice checking works in Chrome, Edge and Safari (not Brave, Opera or Firefox).";
+    return "🌐 Slow or no connection to the online speech service, so the app switched to the 🧠 Built-in recognizer, which runs on your device and works offline. Press Say it again.";
   if (error === "language-not-supported") return "This browser can't recognize English speech. Please use Chrome, Edge or Safari.";
   if (error === "builtin-failed")
     return "⚙️ The built-in recognizer couldn't start. The first time, it needs internet to download (about 40 MB). Check your connection and try again.";
@@ -313,6 +313,8 @@ export function listen(opts: {
   };
   rec.onerror = (e) => {
     error = e.error;
+    // Slow / no connection to the online service: use the on-device recognizer from now on.
+    if (e.error === "network") setEngine("builtin");
   };
   rec.onend = settle;
 

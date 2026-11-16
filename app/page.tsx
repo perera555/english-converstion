@@ -1,6 +1,7 @@
 import Link from "next/link";
 import HeroCube from "@/components/HeroCube";
 import { DailyGoalCard } from "@/components/PracticeTimer";
+import OfflineSaver from "@/components/OfflineSaver";
 import { getSummaries, TOTAL } from "@/lib/conversations";
 import { ESSAY_TOTAL } from "@/lib/essays";
 import { examEssays } from "@/lib/exams";
@@ -90,9 +91,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* 2. daily goal */}
-      <section className="mb-12">
+      {/* 2. daily goal + offline practice */}
+      <section className="mb-12 grid gap-4 lg:grid-cols-2">
         <DailyGoalCard />
+        <OfflineSaver />
       </section>
 
       {/* 3. sections */}

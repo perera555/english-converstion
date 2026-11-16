@@ -50,8 +50,9 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
   const runRef = useRef(0);
   const cancelRef = useRef<(() => void) | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
-  const settings = useRef({ voice, rate, voices, mode, rounds });
-  settings.current = { voice, rate, voices, mode, rounds };
+  const [untilCorrect, setUntilCorrect] = useState(true);
+  const settings = useRef({ voice, rate, voices, mode, rounds, untilCorrect });
+  settings.current = { voice, rate, voices, mode, rounds, untilCorrect };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -105,30 +106,49 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
           setNotice("Speech recognition needs Chrome or Edge. Read the sentence aloud anyway!");
           await wait(1500 + tokenize(sentences[i].text).length * 400);
         } else {
-          setListening(true);
-          setHeard("");
-          setWord(-1);
-          const l = listen({ onInterim: setHeard, timeoutMs: 6000 + tokenize(sentences[i].text).length * 750, target: sentences[i].text });
-          cancelRef.current = l.cancel;
-          const r = await l.done;
-          setListening(false);
-          if (runRef.current !== token) return;
-          const problem = r.error === "self" ? null : micErrorMessage(r.error, r.transcript);
-          if (r.error === "self") {
-            // self-check: the recording was played back, nothing to score
-          } else
-          if (problem) {
-            setNotice(problem);
-            if (r.error && r.error !== "no-speech") {
-              stop();
-              return;
+          // Listen; if the sentence isn't correct yet, show mistakes, read it again, and listen again.
+          let lastScore: number | null = null;
+          for (let tries = 1; tries <= 5; tries++) {
+            if (tries > 1) {
+              setNotice(`🔁 ${lastScore}%: not quite yet. Red words were missed. Listen, then read the sentence again (try ${tries} of 5).`);
+              await wait(900);
+              if (runRef.current !== token) return;
+              const again = speak(sentences[i].text, {
+                voice: settings.current.voices.find((v) => v.name === settings.current.voice),
+                rate: settings.current.rate,
+                onWord: (k) => runRef.current === token && setWord(k),
+              });
+              cancelRef.current = again.cancel;
+              await again.done;
+              if (runRef.current !== token) return;
             }
-          } else {
-            setNotice("");
+            setListening(true);
+            setHeard("");
+            setWord(-1);
+            const l = listen({ onInterim: setHeard, timeoutMs: 6000 + tokenize(sentences[i].text).length * 750, target: sentences[i].text });
+            cancelRef.current = l.cancel;
+            const r = await l.done;
+            setListening(false);
+            if (runRef.current !== token) return;
+            if (r.error === "self") break; // self-check: the recording was played back, nothing to score
+            const problem = micErrorMessage(r.error, r.transcript);
+            if (problem) {
+              setNotice(problem);
+              if (r.error && r.error !== "no-speech") {
+                stop();
+                return;
+              }
+              break;
+            }
             const sc = scoreSpeech(sentences[i].text, r.transcript);
-            scores.push(sc.score);
+            lastScore = sc.score;
             setResults((p) => ({ ...p, [i]: { ...sc, spoken: r.transcript } }));
+            if (sc.score >= 70 || !settings.current.untilCorrect) {
+              setNotice(tries > 1 && sc.score >= 70 ? `✅ ${sc.score}%: corrected! Well done.` : "");
+              break;
+            }
           }
+          if (lastScore !== null) scores.push(lastScore);
         }
       }
       await wait(m === "video" ? 450 : 200);
@@ -282,6 +302,12 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
           <input type="range" min={0.5} max={1.3} step={0.05} value={rate} onChange={(e) => setRate(Number(e.target.value))} className="w-24 accent-cyan-400" />
           <span className="w-10 tabular-nums text-white">{rate.toFixed(2)}×</span>
         </label>
+        {mode === "shadow" && (
+          <label className="flex cursor-pointer items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-semibold">
+            <input type="checkbox" checked={untilCorrect} onChange={(e) => setUntilCorrect(e.target.checked)} className="accent-emerald-400" />
+            🔁 Repeat each sentence until correct
+          </label>
+        )}
         <select value={voice} onChange={(e) => setVoice(e.target.value)} className="ml-auto max-w-[14rem] rounded-lg border border-white/10 bg-black/40 px-2 py-2 text-xs">
           {voices.map((v) => (
             <option key={v.name} value={v.name}>

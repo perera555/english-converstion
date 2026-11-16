@@ -6,6 +6,7 @@ import Tilt3D from "@/components/Tilt3D";
 import { PracticeBadge } from "@/components/PracticeTimer";
 import { BottomTabs, HeaderLinks } from "@/components/NavLinks";
 import MicCheck from "@/components/MicCheck";
+import OfflineBanner from "@/components/OfflineBanner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             </nav>
           </div>
         </header>
+        <OfflineBanner />
         <main className="mx-auto w-full max-w-7xl px-4 pb-24">{children}</main>
         <footer className="border-t border-white/5 pb-24 pt-8 text-center text-xs text-white/40 lg:pb-8">
           SpeakUp English · 100% free · 1,250 conversations · 1,000 essays · 1,000 tongue twisters · 160 IELTS/PTE essays. Works best in Chrome,
