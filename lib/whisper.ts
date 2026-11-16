@@ -7,6 +7,8 @@
  * downloads once and is cached by the browser.
  */
 
+import { publishMicLevel } from "./mic-level";
+
 const LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1/dist/transformers.min.js";
 const MODEL = "Xenova/whisper-tiny.en";
 const ENGINE_KEY = "ec-recognizer";
@@ -132,7 +134,9 @@ export function listenBuiltin(opts: {
         for (const v of data) p = Math.max(p, Math.abs(v - 128));
         const level = Math.min(1, p / 50);
         opts.onLevel?.(level);
-        if (level > 0.12) {
+        publishMicLevel(level);
+        // Low threshold: some USB headsets record quietly.
+        if (level > 0.06) {
           spoke = true;
           lastLoud = Date.now();
         }
@@ -146,17 +150,27 @@ export function listenBuiltin(opts: {
     await stopped;
     stream.getTracks().forEach((t) => t.stop());
     ctx.close().catch(() => {});
+    publishMicLevel(0);
     if (cancelled) return { transcript: "", error: "aborted" };
-    if (!spoke) return { transcript: "", error: "no-speech" };
 
+    // Always transcribe, even if the mic was quiet: Whisper copes with low volume.
     opts.onInterim("… recognizing …");
     try {
       const pcm = await toPcm16k(new Blob(chunks, { type: rec.mimeType }));
+      // Boost quiet recordings so the model hears them clearly.
+      let max = 0;
+      for (let i = 0; i < pcm.length; i++) max = Math.max(max, Math.abs(pcm[i]));
+      if (max > 0 && max < 0.5) {
+        const g = Math.min(20, 0.9 / max);
+        for (let i = 0; i < pcm.length; i++) pcm[i] *= g;
+      }
       const run = await model;
       const out = await run(pcm);
-      const text = (Array.isArray(out) ? out[0]?.text : out.text)?.trim() ?? "";
+      const raw = (Array.isArray(out) ? out[0]?.text : out.text) ?? "";
+      // Whisper marks silence like "[BLANK_AUDIO]" or "(silence)".
+      const text = raw.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim();
       opts.onInterim(text);
-      return { transcript: text.replace(/^\[.*\]$/, "") };
+      return text ? { transcript: text } : { transcript: "", error: spoke ? undefined : "no-speech" };
     } catch {
       return { transcript: "", error: "builtin-failed" };
     }

@@ -2,43 +2,23 @@
 
 import { useEffect, useState } from "react";
 
-/**
- * Live microphone level (0–1) while `active` is true. Used as a visual check that the mic
- * is picking up sound. Skipped on Android, where a second mic stream can block speech recognition.
+/*
+ * Live mic level published by whichever recognizer is recording. The UI subscribes
+ * instead of opening a second microphone stream, because some USB/Bluetooth headsets
+ * give silence to BOTH streams when two recordings run at the same time.
  */
+const subs = new Set<(l: number) => void>();
+export function publishMicLevel(level: number) {
+  subs.forEach((s) => s(level));
+}
+
 export function useMicLevel(active: boolean) {
   const [level, setLevel] = useState(0);
   useEffect(() => {
-    if (!active || typeof navigator === "undefined" || /android|iphone|ipad|ipod/i.test(navigator.userAgent) || !navigator.mediaDevices) return;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    let raf = 0;
-    let stopped = false;
-    navigator.mediaDevices
-      .getUserMedia({ audio: true })
-      .then((s) => {
-        if (stopped) return s.getTracks().forEach((t) => t.stop());
-        stream = s;
-        ctx = new AudioContext();
-        const an = ctx.createAnalyser();
-        an.fftSize = 512;
-        ctx.createMediaStreamSource(s).connect(an);
-        const data = new Uint8Array(an.frequencyBinCount);
-        const loop = () => {
-          an.getByteTimeDomainData(data);
-          let peak = 0;
-          for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
-          setLevel(Math.min(1, peak / 50));
-          raf = requestAnimationFrame(loop);
-        };
-        loop();
-      })
-      .catch(() => {});
+    if (!active) return;
+    subs.add(setLevel);
     return () => {
-      stopped = true;
-      cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((t) => t.stop());
-      ctx?.close().catch(() => {});
+      subs.delete(setLevel);
       setLevel(0);
     };
   }, [active]);
