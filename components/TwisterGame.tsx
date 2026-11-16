@@ -305,7 +305,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
         }, 2200);
       } else if (twisters[tw.id]) {
         let n = 3;
-        setAutoMsg(`✨ Great job! Next twister in ${n}…`);
+        setAutoMsg(`✅ Goal completed! Great job! Next twister in ${n}…`);
         const tick = () => {
           n--;
           if (n <= 0) {
@@ -313,7 +313,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
             autoNext.current = true;
             goNext();
           } else {
-            setAutoMsg(`✨ Great job! Next twister in ${n}…`);
+            setAutoMsg(`✅ Goal completed! Great job! Next twister in ${n}…`);
             autoTimer.current = setTimeout(tick, 1000);
           }
         };
