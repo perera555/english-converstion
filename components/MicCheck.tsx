@@ -84,7 +84,13 @@ export default function MicCheck() {
       setOpen(true);
     };
     window.addEventListener("open-voice-check", onOpen);
+    const onOpenPlain = () => {
+      setGate(false);
+      setOpen(true);
+    };
+    window.addEventListener("open-mic-check", onOpenPlain);
     return () => {
+      window.removeEventListener("open-mic-check", onOpenPlain);
       navigator.mediaDevices.removeEventListener?.("devicechange", onChange);
       window.removeEventListener("open-voice-check", onOpen);
     };

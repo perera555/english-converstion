@@ -8,7 +8,7 @@ import { scoreSpeech, tokenize } from "@/lib/score";
 import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
 import { requestVoiceCheck } from "@/lib/voice-check";
 import RecognizerChip from "./RecognizerChip";
-import { getMicDevice } from "@/lib/whisper";
+import { getEngine, getMicDevice } from "@/lib/whisper";
 
 /* ------------------------------------------------------------ progress store */
 
@@ -105,6 +105,9 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
   useEffect(() => reset, [reset]);
 
   const micLevel = useMicLevel(phase === "listening");
+  const [diag, setDiag] = useState("");
+  const peakRef = useRef(0);
+  peakRef.current = Math.max(peakRef.current, micLevel);
   const words = tokenize(tw.text);
   const liveHits = phase === "listening" && heard ? scoreSpeech(tw.text, heard, { fuzzy: "names" }).hits : null;
 
@@ -127,10 +130,18 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
     setNotice("");
     if (!(await requestVoiceCheck())) return;
     setPhase("listening");
+    setDiag("");
+    peakRef.current = 0;
     const l = listen({ onInterim: setHeard, timeoutMs: 7000 + words.length * 800, target: tw.text });
     cancelRef.current = l.cancel;
     const r = await l.done;
     if (r.error === "aborted") return; // stopped by the learner
+    const engine = getEngine();
+    setDiag(
+      `Recognizer: ${engine === "builtin" ? "built-in" : "browser"} · mic loudness: ${
+        engine === "builtin" ? Math.round(peakRef.current * 100) + "%" : "n/a"
+      } · result: ${r.transcript ? `"${r.transcript}"` : "no words"}${r.error ? ` · code: ${r.error}` : ""}`,
+    );
     const problem = micErrorMessage(r.error, r.transcript);
     if (problem) {
       // Nothing usable was heard: explain why, and don't count it as a failed attempt.
@@ -391,7 +402,35 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
               </div>
             )}
 
-            {notice && <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">{notice}</div>}
+            {notice && (
+              <div className="mt-6 rounded-2xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">
+                {notice}
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => window.dispatchEvent(new CustomEvent("open-mic-check"))}
+                    className="rounded-lg bg-white/15 px-3 py-1 text-xs font-bold text-white hover:bg-white/25"
+                  >
+                    🎧 Check my mic here
+                  </button>
+                  {!selfMode && (
+                    <button onClick={() => setSelfMode(true)} className="rounded-lg bg-emerald-500/80 px-3 py-1 text-xs font-bold text-black">
+                      Use self-check mode instead
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {diag && <div className="mt-2 text-center font-mono text-[11px] text-white/40">{diag}</div>}
+            {!notice && phase === "idle" && (
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent("open-mic-check"))}
+                  className="text-xs font-semibold text-white/50 underline hover:text-white"
+                >
+                  🎧 Check my mic here
+                </button>
+              </div>
+            )}
 
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <button onClick={() => hear(0.95)} disabled={phase === "listening"} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
