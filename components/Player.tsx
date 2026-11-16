@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Conversation, Speaker } from "@/lib/types";
-import { listen, pickDefaultPair, recognitionSupported, speak, useVoices } from "@/lib/speech";
+import { listen, micErrorMessage, pickDefaultPair, recognitionSupported, speak, stopSpeech, useVoices } from "@/lib/speech";
 import { scoreSpeech, tokenize } from "@/lib/score";
 import { useProgress } from "@/lib/progress";
 import type { RealVideo } from "@/lib/videos";
 import CompletionBar from "./CompletionBar";
+import KaraokeScreen from "./KaraokeScreen";
+import { requestVoiceCheck } from "@/lib/voice-check";
 import RealVideos from "./RealVideos";
 import VideoStage from "./VideoStage";
 
@@ -71,7 +73,7 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
     runRef.current++;
     cancelRef.current?.();
     cancelRef.current = null;
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    stopSpeech();
     setPlaying(false);
     setListening(false);
     setWordIndex(-1);
@@ -111,16 +113,19 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
     setHeard("");
     setListening(true);
     setWordIndex(-1);
-    const h = listen({ onInterim: (t) => setHeard(t), timeoutMs: 3500 + n * 650 });
+    const h = listen({ onInterim: (t) => setHeard(t), timeoutMs: 6000 + n * 750, target: line.text });
     cancelRef.current = h.cancel;
     const r = await h.done;
     setListening(false);
     if (runRef.current !== token) return null;
-    if (r.error === "not-allowed" || r.error === "service-not-allowed") {
-      setNotice("Microphone access is blocked. Allow the mic in your browser's address bar, then press play again.");
-      stop();
+    const problem = micErrorMessage(r.error, r.transcript);
+    if (problem) {
+      setNotice(problem);
+      // A blocked or missing mic stops practice; "didn't hear you" just moves on to the next line.
+      if (r.transcript === "" && r.error && r.error !== "no-speech") stop();
       return null;
     }
+    setNotice("");
     const { hits, score } = scoreSpeech(line.text, r.transcript);
     setResults((prev) => ({ ...prev, [i]: { spoken: r.transcript, score, hits } }));
     return score;
@@ -134,6 +139,8 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
     }
     const token = ++runRef.current;
     const m = settings.current.mode;
+    if ((m === "shadow" || m === "roleplay") && !nextRound && !(await requestVoiceCheck())) return;
+    if (runRef.current !== token) return;
     setPlaying(true);
     setNotice("");
     setJustFinished(false);
@@ -457,6 +464,17 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
           );
         })}
       </div>
+
+      {(playing || listening) && mode !== "video" && conv.lines[current] && (
+        <KaraokeScreen
+          label={`${conv.speakers[conv.lines[current].speaker].name} · line ${current + 1}/${conv.lines.length}`}
+          text={conv.lines[current].text}
+          wordIndex={wordIndex}
+          listening={listening}
+          heard={heard}
+          nextText={conv.lines[current + 1]?.text}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import HeroCube from "@/components/HeroCube";
-import Library from "@/components/Library";
 import { DailyGoalCard } from "@/components/PracticeTimer";
 import { getSummaries, TOTAL } from "@/lib/conversations";
 import { ESSAY_TOTAL } from "@/lib/essays";
@@ -10,7 +9,7 @@ import { twisters } from "@/lib/twisters";
 
 const SECTIONS = [
   {
-    href: "/#library",
+    href: "/conversations",
     icon: "💬",
     title: "Conversations",
     count: TOTAL,
@@ -162,9 +161,11 @@ export default function Home() {
         ))}
       </section>
 
-      {/* 6. library */}
-      <h2 className="mb-5 text-2xl font-black sm:text-3xl">All {TOTAL.toLocaleString()} conversations</h2>
-      <Library items={items} />
+      <div className="text-center">
+        <Link href="/conversations" className="btn-3d inline-block rounded-2xl bg-gradient-to-r from-fuchsia-500 to-violet-600 px-8 py-4 font-black">
+          💬 Browse all {TOTAL.toLocaleString()} conversations →
+        </Link>
+      </div>
     </>
   );
 }

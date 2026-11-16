@@ -3,8 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Chapter, Twister } from "@/lib/twisters";
 import { LEVELS, levelMeta } from "@/lib/levels";
-import { listen, recognitionSupported, speak, useVoices } from "@/lib/speech";
+import { listen, micErrorMessage, recognitionSupported, speak, stopSpeech, useVoices } from "@/lib/speech";
 import { scoreSpeech, tokenize } from "@/lib/score";
+import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
+import { requestVoiceCheck } from "@/lib/voice-check";
+import RecognizerChip from "./RecognizerChip";
 
 /* ------------------------------------------------------------ progress store */
 
@@ -77,7 +80,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
 
   const reset = useCallback(() => {
     cancelRef.current?.();
-    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+    stopSpeech();
     setPhase("idle");
     setWord(-1);
     setHeard("");
@@ -86,6 +89,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
   }, []);
   useEffect(() => reset, [reset]);
 
+  const micLevel = useMicLevel(phase === "listening");
   const words = tokenize(tw.text);
   const liveHits = phase === "listening" && heard ? scoreSpeech(tw.text, heard, { fuzzy: "names" }).hits : null;
 
@@ -106,13 +110,17 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
       return;
     }
     setNotice("");
+    if (!(await requestVoiceCheck())) return;
     setPhase("listening");
-    const l = listen({ onInterim: setHeard, timeoutMs: 5000 + words.length * 700 });
+    const l = listen({ onInterim: setHeard, timeoutMs: 7000 + words.length * 800, target: tw.text });
     cancelRef.current = l.cancel;
     const r = await l.done;
-    if (r.error === "not-allowed" || r.error === "service-not-allowed") {
+    if (r.error === "aborted") return; // stopped by the learner
+    const problem = micErrorMessage(r.error, r.transcript);
+    if (problem) {
+      // Nothing usable was heard: explain why, and don't count it as a failed attempt.
       setPhase("idle");
-      setNotice("Microphone is blocked. Allow microphone access in your browser, then try again.");
+      setNotice(problem);
       return;
     }
     const sc = scoreSpeech(tw.text, r.transcript, { fuzzy: "names" });
@@ -255,6 +263,13 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
                   <span className="relative inline-flex h-6 w-6 rounded-full bg-emerald-500" />
                 </span>
                 <span className="text-sm">{heard ? `“${heard}”` : "Listening… say it now!"}</span>
+                <MicLevelBar level={micLevel} />
+                <RecognizerChip heard={heard} listening />
+              </div>
+            )}
+            {phase !== "listening" && (
+              <div className="mt-4 flex justify-center">
+                <RecognizerChip heard="" listening={false} />
               </div>
             )}
 

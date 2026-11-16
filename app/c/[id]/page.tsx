@@ -41,7 +41,7 @@ export default async function ConversationPage({ params }: PageProps<"/c/[id]">)
       <LessonHeader
         crumbs={[
           { href: "/", label: "Home" },
-          { href: "/#library", label: "Conversations" },
+          { href: "/conversations", label: "Conversations" },
           { href: `/c/${conv.id}`, label: `#${conv.id}` },
         ]}
         icon={conv.emoji}

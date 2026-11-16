@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Essay } from "@/lib/essay-types";
 import type { RealVideo } from "@/lib/videos";
-import { listen, recognitionSupported, speak, useVoices } from "@/lib/speech";
+import { listen, micErrorMessage, recognitionSupported, speak, stopSpeech, useVoices } from "@/lib/speech";
 import { scoreSpeech, tokenize } from "@/lib/score";
 import { useProgress } from "@/lib/progress";
 import CompletionBar from "./CompletionBar";
+import KaraokeScreen from "./KaraokeScreen";
+import { requestVoiceCheck } from "@/lib/voice-check";
 import RealVideos from "./RealVideos";
 import { SCENES } from "./VideoStage";
 
@@ -59,7 +61,7 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
   const stop = useCallback(() => {
     runRef.current++;
     cancelRef.current?.();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    stopSpeech();
     setPlaying(false);
     setListening(false);
     setWord(-1);
@@ -74,6 +76,8 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
     }
     const token = ++runRef.current;
     const m = settings.current.mode;
+    if (m === "shadow" && !nextRound && !(await requestVoiceCheck())) return;
+    if (runRef.current !== token) return;
     setPlaying(true);
     setNotice("");
     setJustFinished(false);
@@ -104,19 +108,24 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
           setListening(true);
           setHeard("");
           setWord(-1);
-          const l = listen({ onInterim: setHeard, timeoutMs: 4000 + tokenize(sentences[i].text).length * 650 });
+          const l = listen({ onInterim: setHeard, timeoutMs: 6000 + tokenize(sentences[i].text).length * 750, target: sentences[i].text });
           cancelRef.current = l.cancel;
           const r = await l.done;
           setListening(false);
           if (runRef.current !== token) return;
-          if (r.error === "not-allowed" || r.error === "service-not-allowed") {
-            setNotice("Microphone is blocked. Allow it in the address bar and press play again.");
-            stop();
-            return;
+          const problem = micErrorMessage(r.error, r.transcript);
+          if (problem) {
+            setNotice(problem);
+            if (r.error && r.error !== "no-speech") {
+              stop();
+              return;
+            }
+          } else {
+            setNotice("");
+            const sc = scoreSpeech(sentences[i].text, r.transcript);
+            scores.push(sc.score);
+            setResults((p) => ({ ...p, [i]: { ...sc, spoken: r.transcript } }));
           }
-          const sc = scoreSpeech(sentences[i].text, r.transcript);
-          scores.push(sc.score);
-          setResults((p) => ({ ...p, [i]: { ...sc, spoken: r.transcript } }));
         }
       }
       await wait(m === "video" ? 450 : 200);
@@ -333,6 +342,17 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
           ))}
         </div>
       </article>
+
+      {(playing || listening) && mode !== "video" && cur && (
+        <KaraokeScreen
+          label={`Sentence ${current + 1}/${sentences.length}`}
+          text={cur.text}
+          wordIndex={word}
+          listening={listening}
+          heard={heard}
+          nextText={sentences[current + 1]?.text}
+        />
+      )}
     </div>
   );
 }

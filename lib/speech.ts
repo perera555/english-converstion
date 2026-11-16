@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { tokenize } from "./score";
+import { scoreSpeech, tokenize } from "./score";
 import { pingActivity } from "./practice";
+import { getEngine, listenBuiltin } from "./whisper";
 
 /* ---------------------------------------------------------------- voices */
 
@@ -56,6 +57,14 @@ export function wordOffsets(text: string) {
 
 // Chrome garbage-collects utterances that aren't referenced, which drops "end" events.
 const alive = new Set<SpeechSynthesisUtterance>();
+let lastCancel = 0;
+
+/** Stops all speech. Always use this instead of speechSynthesis.cancel(). */
+export function stopSpeech() {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.cancel();
+  lastCancel = Date.now();
+}
 
 export function speak(
   text: string,
@@ -64,20 +73,14 @@ export function speak(
   const synth = window.speechSynthesis;
   const words = tokenize(text);
   const offsets = wordOffsets(text);
-  const u = new SpeechSynthesisUtterance(text);
-  if (opts.voice) {
-    u.voice = opts.voice;
-    u.lang = opts.voice.lang;
-  } else u.lang = "en-US";
-  u.rate = opts.rate;
-  u.pitch = opts.pitch ?? 1;
-  alive.add(u);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   pingActivity();
   const pinger = setInterval(pingActivity, 1000);
   let gotBoundary = false;
   let finished = false;
+  let started = false;
+  let current: SpeechSynthesisUtterance | null = null;
   let resolveFn: () => void = () => {};
 
   // Fallback karaoke timing for voices that never fire boundary events.
@@ -93,14 +96,28 @@ export function speak(
     finished = true;
     clearTimeout(timer);
     clearInterval(pinger);
-    alive.delete(u);
+    clearTimeout(retry);
+    if (current) alive.delete(current);
     opts.onWord(words.length);
     resolveFn();
   };
 
   const done = new Promise<void>((resolve) => {
     resolveFn = resolve;
-    u.onstart = () => runFallback(0);
+  });
+
+  const make = (voice?: SpeechSynthesisVoice) => {
+    const u = new SpeechSynthesisUtterance(text);
+    if (voice) {
+      u.voice = voice;
+      u.lang = voice.lang;
+    } else u.lang = "en-US";
+    u.rate = opts.rate;
+    u.pitch = opts.pitch ?? 1;
+    u.onstart = () => {
+      started = true;
+      runFallback(0);
+    };
     u.onboundary = (e) => {
       if (e.name && e.name !== "word") return;
       if (!gotBoundary) {
@@ -111,19 +128,50 @@ export function speak(
       for (let k = 0; k < offsets.length; k++) if (offsets[k] <= e.charIndex) idx = k;
       opts.onWord(idx);
     };
-    u.onend = finish;
-    u.onerror = finish;
-  });
+    u.onend = () => u === current && finish();
+    u.onerror = (e) => {
+      // "interrupted"/"canceled" come from our own cancel; anything else: try the default voice once.
+      if (u !== current) return;
+      if (!started && voice && e.error !== "interrupted" && e.error !== "canceled") return say();
+      finish();
+    };
+    alive.add(u);
+    current = u;
+    return u;
+  };
+
+  const say = (voice?: SpeechSynthesisVoice) => {
+    if (finished) return;
+    const u = make(voice);
+    // Chrome/Edge pause bug: make sure the queue isn't stuck.
+    synth.resume();
+    synth.speak(u);
+  };
+
+  // If the chosen (often online) voice never starts, retry once with the browser's default voice.
+  const retry = setTimeout(() => {
+    if (!started && !finished && opts.voice) {
+      stopSpeech();
+      setTimeout(() => say(), 150);
+    }
+  }, 2500);
 
   // A watchdog in case the browser never fires "end".
-  const watchdog = setTimeout(finish, 4000 + (text.length * 120) / opts.rate);
+  const watchdog = setTimeout(finish, 6500 + (text.length * 120) / opts.rate);
   done.then(() => clearTimeout(watchdog));
 
-  synth.speak(u);
+  // Speaking immediately after cancel() can silently drop the utterance, so wait a moment
+  // when something is still queued. Otherwise speak right away (keeps the click's user gesture).
+  if (synth.speaking || synth.pending) {
+    stopSpeech();
+    setTimeout(() => say(opts.voice), 150);
+  } else if (Date.now() - lastCancel < 150) {
+    setTimeout(() => say(opts.voice), 150 - (Date.now() - lastCancel));
+  } else say(opts.voice);
   return {
     done,
     cancel: () => {
-      synth.cancel();
+      stopSpeech();
       finish();
     },
   };
@@ -150,21 +198,53 @@ function getRecognitionCtor(): (new () => RecognitionLike) | undefined {
   return (w.SpeechRecognition ?? w.webkitSpeechRecognition) as (new () => RecognitionLike) | undefined;
 }
 
+/** A clear, actionable message for a speech-recognition error (or an empty result). */
+export function micErrorMessage(error: string | undefined, transcript: string): string | null {
+  if (error === "not-allowed" || error === "service-not-allowed")
+    return "🚫 Microphone is blocked. Click the 🔒 / mic icon in the address bar, choose Allow, then try again.";
+  if (error === "audio-capture") return "🎙️ No microphone found. Plug in your headset or earbuds, then open 🎧 Mic check at the top to test it.";
+  if (error === "network")
+    return "🌐 The speech service couldn't be reached. Check your internet. Voice checking works in Chrome, Edge and Safari (not Brave, Opera or Firefox).";
+  if (error === "language-not-supported") return "This browser can't recognize English speech. Please use Chrome, Edge or Safari.";
+  if (error === "builtin-failed")
+    return "⚙️ The built-in recognizer couldn't start. The first time, it needs internet to download (about 40 MB). Check your connection and try again.";
+  if (error === "unsupported")
+    return "This browser has no voice recognizer. Open 🎧 Mic check at the top and switch on the built-in recognizer.";
+  if (!transcript)
+    return getEngine() === "builtin"
+      ? "🤔 We didn't hear anything. Speak a bit louder and closer to the mic, right after pressing the button."
+      : "🤔 We didn't hear anything. If your mic works but this keeps happening, open 🎧 Mic check at the top and switch on the built-in recognizer.";
+  return null;
+}
+
 export function recognitionSupported() {
-  return !!getRecognitionCtor();
+  return getEngine() === "builtin" || !!getRecognitionCtor();
 }
 
 export function listen(opts: {
   onInterim: (text: string) => void;
   timeoutMs: number;
+  /** the sentence the learner should say; used to pick the best of several recognition guesses */
+  target?: string;
 }): { done: Promise<{ transcript: string; error?: string }>; cancel: () => void } {
+  // Built-in recognizer (Whisper in the browser) when the learner chose it in Mic check.
+  if (getEngine() === "builtin") {
+    pingActivity();
+    const p = setInterval(pingActivity, 1000);
+    const h = listenBuiltin({ onInterim: opts.onInterim, timeoutMs: opts.timeoutMs });
+    h.done.finally(() => clearInterval(p));
+    return h;
+  }
   const Ctor = getRecognitionCtor();
   if (!Ctor) return { done: Promise.resolve({ transcript: "", error: "unsupported" }), cancel: () => {} };
   const rec = new Ctor();
+  const android = /android/i.test(navigator.userAgent);
   rec.lang = "en-US";
   rec.interimResults = true;
-  rec.continuous = false;
-  rec.maxAlternatives = 1;
+  // Continuous mode tolerates short pauses; Android duplicates words in that mode, so keep it off there.
+  rec.continuous = !android;
+  rec.maxAlternatives = 3;
+  let silence: ReturnType<typeof setTimeout> | undefined;
 
   let transcript = "";
   pingActivity();
@@ -176,6 +256,7 @@ export function listen(opts: {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
+    clearTimeout(silence);
     clearInterval(pinger);
     resolveFn({ transcript, error });
   };
@@ -186,9 +267,35 @@ export function listen(opts: {
 
   rec.onresult = (e) => {
     let text = "";
-    for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-    transcript = text.trim();
+    let allFinal = true;
+    for (let i = 0; i < e.results.length; i++) {
+      const r = e.results[i];
+      allFinal &&= r.isFinal;
+      // Pick the guess that best matches the target sentence (helps with accents and twisters).
+      let best = r[0].transcript;
+      if (opts.target && r.length > 1) {
+        let bestScore = -1;
+        for (let a = 0; a < r.length; a++) {
+          const s = scoreSpeech(opts.target, r[a].transcript).score;
+          if (s > bestScore) {
+            bestScore = s;
+            best = r[a].transcript;
+          }
+        }
+      }
+      text += " " + best;
+    }
+    transcript = text.replace(/\s+/g, " ").trim();
     opts.onInterim(transcript);
+    // In continuous mode, stop once the learner has been quiet for a moment after speaking.
+    clearTimeout(silence);
+    if (rec.continuous && transcript) {
+      silence = setTimeout(() => {
+        try {
+          rec.stop();
+        } catch {}
+      }, allFinal ? 1200 : 2200);
+    }
   };
   rec.onerror = (e) => {
     error = e.error;
