@@ -42,3 +42,4 @@ next-env.d.ts
 
 # local build logs
 build.log
+.vercel
