@@ -7,7 +7,7 @@ import { ENGINES, getEngine, setEngine, type Engine } from "@/lib/whisper";
  * Status line shown where the learner speaks: active recognizer (switchable between all
  * three), and whether words are coming through.
  */
-export default function RecognizerChip({ heard, listening }: { heard: string; listening: boolean }) {
+export default function RecognizerChip({ heard, listening, hideSelf = false }: { heard: string; listening: boolean; hideSelf?: boolean }) {
   const [engine, setEngineState] = useState<Engine>("browser");
   const [waited, setWaited] = useState(false);
 
@@ -42,7 +42,7 @@ export default function RecognizerChip({ heard, listening }: { heard: string; li
           className="rounded-full bg-black/40 px-1.5 py-0.5 text-[11px] font-bold text-white"
           title="Takes effect on your next try"
         >
-          {ENGINES.map((x) => (
+          {ENGINES.filter((x) => !hideSelf || x.id !== "self").map((x) => (
             <option key={x.id} value={x.id}>
               {x.label} ({x.note})
             </option>

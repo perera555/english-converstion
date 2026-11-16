@@ -113,7 +113,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
   useEffect(() => {
     try {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSelfModeState(localStorage.getItem("ec-selfcheck") === "1");
+      setSelfModeState(false); // compare box removed from twisters
     } catch {}
   }, []);
   const setSelfMode = (on: boolean) => {
@@ -162,7 +162,8 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
 
   const tryIt = async () => {
     // "Self-check" chosen as the recognizer: use the twister's full record & compare panel.
-    if (getEngine() === "self") return recordSelf();
+    // Twisters always score automatically: Self-check isn't used here.
+    if (getEngine() === "self") setEngine("builtin");
     reset();
     if (!recognitionSupported()) {
       setNotice("Voice checking needs Chrome, Edge, Safari (iPhone/Mac) or Samsung Internet. Please open the app in one of these browsers.");
@@ -291,7 +292,8 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
     autoTimer.current = null;
     setAutoMsg("");
   };
-  const say = () => (selfMode || getEngine() === "self" ? recordSelf() : tryIt());
+  // Twisters always check automatically (no manual compare box).
+  const say = () => tryIt();
 
   useEffect(() => {
     if (!autoMode) return;
@@ -537,11 +539,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
             {phase !== "listening" && phase !== "recording" && phase !== "review" && (
               <div className="mt-4 flex flex-col items-center gap-2">
                 <DeviceBar />
-                {!selfMode && <RecognizerChip heard="" listening={false} />}
-                <label className="flex cursor-pointer items-center gap-2 text-xs text-white/70">
-                  <input type="checkbox" checked={selfMode} onChange={(e) => setSelfMode(e.target.checked)} className="accent-emerald-400" />
-                  Self-check mode: record myself and compare (use if voice recognition doesn&apos;t work)
-                </label>
+                <RecognizerChip heard="" listening={false} hideSelf />
               </div>
             )}
 
@@ -580,11 +578,6 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
                   >
                     🎧 Check my mic here
                   </button>
-                  {!selfMode && (
-                    <button onClick={() => setSelfMode(true)} className="rounded-lg bg-emerald-500/80 px-3 py-1 text-xs font-bold text-black">
-                      Use self-check mode instead
-                    </button>
-                  )}
                 </div>
               </div>
             )}
