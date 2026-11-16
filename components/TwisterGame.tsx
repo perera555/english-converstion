@@ -11,7 +11,7 @@ import RecognizerChip from "./RecognizerChip";
 import DeviceBar from "./DeviceBar";
 import SelfCompare from "./SelfCompare";
 import { useReadAlong } from "@/lib/use-guide";
-import { getEngine, getMicDevice } from "@/lib/whisper";
+import { getEngine, getMicDevice, setEngine } from "@/lib/whisper";
 
 /* ------------------------------------------------------------ progress store */
 
@@ -44,6 +44,41 @@ const subscribe = (s: () => void) => {
   subs.add(s);
   return () => subs.delete(s);
 };
+
+/** Round score gauge with the pass mark shown as a tick. */
+function ScoreGauge({ score, threshold, pass }: { score: number; threshold: number; pass: boolean }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const tick = (threshold / 100) * 360 - 90;
+  return (
+    <div className="relative mx-auto h-36 w-36">
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <circle cx="60" cy="60" r={r} stroke="rgba(255,255,255,0.12)" strokeWidth="10" fill="none" />
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          stroke={pass ? "#34d399" : "#fb7185"}
+          strokeWidth="10"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - score / 100)}
+          className="transition-[stroke-dashoffset] duration-1000"
+        />
+      </svg>
+      <span
+        className="absolute left-1/2 top-1/2 h-3 w-1 -translate-x-1/2 rounded bg-amber-300"
+        style={{ transform: `translate(-50%, -50%) rotate(${tick + 90}deg) translateY(-62px)` }}
+        title={`Pass mark ${threshold}%`}
+      />
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-4xl font-black">{score}%</span>
+        <span className="text-[10px] text-white/50">pass {threshold}%</span>
+      </div>
+    </div>
+  );
+}
 
 function stars(score: number, threshold: number) {
   if (score < threshold) return 0;
@@ -163,6 +198,10 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
 
   // Records progress for one attempt (voice-checked or self-checked).
   const applyScore = (score: number) => {
+    // Pin this twister: otherwise passing moves the "current" twister to the next one
+    // before the learner (or Auto mode) actually goes on, which skipped a twister.
+    setActiveId(tw.id);
+    setChapterN(tw.chapter);
     const sc = { score };
     const p = read();
     const tries = { ...p.tries, [tw.id]: (p.tries[tw.id] ?? 0) + 1 };
@@ -220,6 +259,96 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
     setChapterN(next.chapter);
     setActiveId(next.id);
   };
+
+  /* ---- Auto mode: pass → next twister, drill → again, fail → hear it, then retry ---- */
+  const [autoMode, setAutoModeState] = useState(true);
+  const [autoMsg, setAutoMsg] = useState("");
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoNext = useRef(false); // start listening automatically after moving on
+  const failStreak = useRef(0);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAutoModeState(localStorage.getItem("ec-twister-auto") !== "0");
+      // One-time switch to automatic checking: Self-check (manual compare) off, Built-in recognizer on.
+      if (!localStorage.getItem("ec-auto-migrated-1")) {
+        localStorage.setItem("ec-auto-migrated-1", "1");
+        localStorage.setItem("ec-selfcheck", "0");
+        setSelfModeState(false);
+        if (getEngine() === "self") setEngine("builtin");
+      }
+    } catch {}
+  }, []);
+  const setAutoMode = (on: boolean) => {
+    setAutoModeState(on);
+    try {
+      localStorage.setItem("ec-twister-auto", on ? "1" : "0");
+    } catch {}
+    if (!on) cancelAuto();
+  };
+  const cancelAuto = () => {
+    if (autoTimer.current) clearTimeout(autoTimer.current);
+    autoTimer.current = null;
+    setAutoMsg("");
+  };
+  const say = () => (selfMode || getEngine() === "self" ? recordSelf() : tryIt());
+
+  useEffect(() => {
+    if (!autoMode) return;
+    if (phase === "pass") {
+      failStreak.current = 0;
+      if (reps < drill) {
+        setAutoMsg(`🔁 Again! ${reps} / ${drill} done: say it once more…`);
+        autoTimer.current = setTimeout(() => {
+          setAutoMsg("");
+          say();
+        }, 2200);
+      } else if (twisters[tw.id]) {
+        let n = 3;
+        setAutoMsg(`✨ Great job! Next twister in ${n}…`);
+        const tick = () => {
+          n--;
+          if (n <= 0) {
+            setAutoMsg("");
+            autoNext.current = true;
+            goNext();
+          } else {
+            setAutoMsg(`✨ Great job! Next twister in ${n}…`);
+            autoTimer.current = setTimeout(tick, 1000);
+          }
+        };
+        autoTimer.current = setTimeout(tick, 1000);
+      }
+    } else if (phase === "fail") {
+      failStreak.current++;
+      if (failStreak.current > 4) {
+        setAutoMsg("💪 Take a short break, then press 🎤 to keep practicing.");
+        failStreak.current = 0;
+        return;
+      }
+      setAutoMsg(`🔁 Repeat needed (try ${failStreak.current + 1}): listen, then say it again…`);
+      autoTimer.current = setTimeout(async () => {
+        await hear(0.8);
+        setAutoMsg("");
+        say();
+      }, 1800);
+    }
+    return () => {
+      if (autoTimer.current) clearTimeout(autoTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, autoMode]);
+
+  // After moving to the next twister automatically: play it, then listen.
+  useEffect(() => {
+    if (!autoNext.current) return;
+    autoNext.current = false;
+    (async () => {
+      await hear(0.95);
+      say();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tw.id]);
 
   const levelDone = (lvl: string) => {
     const ids = twisters.filter((t) => chapters[t.chapter - 1].level === lvl);
@@ -311,8 +440,22 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
               {tw.boss && <span className="rounded-full bg-amber-400 px-3 py-1 font-bold text-black">👑 BOSS: famous classic</span>}
               <span className="ml-auto text-white/50">Pass mark: {chapter.threshold}%</span>
             </div>
+            {(() => {
+              const inCh = twisters.filter((t) => t.chapter === chapter.n);
+              const done = inCh.filter((t) => passed.has(t.id)).length;
+              return (
+                <div className="mt-3 flex items-center gap-3 text-[11px] text-white/50">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                    <div className={`h-full rounded-full bg-gradient-to-r ${lm.gradient} transition-all duration-700`} style={{ width: `${(done / inCh.length) * 100}%` }} />
+                  </div>
+                  <span className="tabular-nums">
+                    {done}/{inCh.length} passed
+                  </span>
+                </div>
+              );
+            })()}
 
-            <p className="mt-8 text-center text-2xl font-black leading-snug sm:text-4xl">
+            <p className="mt-6 rounded-3xl bg-black/30 px-4 py-8 text-center text-2xl font-black leading-snug shadow-inner ring-1 ring-white/10 sm:text-4xl">
               {words.map((w, k) => {
                 let cls = "text-white/90";
                 if (phase === "speaking") cls = k < word ? "text-white" : k === word ? "karaoke-word rounded-lg bg-gradient-to-r from-amber-300 to-pink-400 px-1.5 text-black" : "text-white/35";
@@ -404,7 +547,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
 
             {result && (phase === "pass" || phase === "fail") && (
               <div className={`animate-pop mt-8 rounded-3xl p-5 text-center ${phase === "pass" ? "bg-emerald-500/15 ring-1 ring-emerald-400/40" : "bg-rose-500/15 ring-1 ring-rose-400/40"}`}>
-                <div className="text-5xl font-black">{result.score}%</div>
+                <ScoreGauge score={result.score} threshold={chapter.threshold} pass={phase === "pass"} />
                 {phase === "pass" ? (
                   <>
                     <div className="mt-1 text-2xl">{"⭐".repeat(stars(result.score, chapter.threshold))}</div>
@@ -457,42 +600,91 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
               </div>
             )}
 
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <button onClick={() => hear(0.95)} disabled={phase === "listening"} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
-                🔊 Listen
-              </button>
-              <button onClick={() => hear(0.6)} disabled={phase === "listening"} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
-                🐢 Slow
-              </button>
-              {phase === "pass" && (
-                <button onClick={selfMode ? recordSelf : tryIt} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
-                  🔁 Say it again
+            {autoMsg && (
+              <div className="animate-pop mt-6 flex flex-wrap items-center justify-center gap-3 rounded-2xl bg-white/5 p-3 text-sm font-bold ring-1 ring-white/10">
+                {autoMsg}
+                <button onClick={cancelAuto} className="rounded-lg bg-white/10 px-3 py-1 text-xs font-bold hover:bg-white/20">
+                  Stay here
                 </button>
-              )}
-              {phase === "pass" && twisters[tw.id] ? (
-                <button onClick={goNext} className="btn-3d rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-7 py-3 font-black">
-                  Next twister →
+              </div>
+            )}
+
+            {/* Round controls: Listen · big mic · Slow */}
+            <div className="mt-8 flex items-center justify-center gap-5 sm:gap-8">
+              <button
+                onClick={() => {
+                  cancelAuto();
+                  hear(0.95);
+                }}
+                disabled={phase === "listening" || phase === "recording"}
+                className="flex h-16 w-16 flex-col items-center justify-center rounded-full bg-white/10 text-xl ring-1 ring-white/15 transition hover:scale-105 hover:bg-white/15 disabled:opacity-40"
+                title="Listen"
+              >
+                🔊<span className="text-[10px] font-bold">Listen</span>
+              </button>
+
+              {phase === "pass" && twisters[tw.id] && !autoMsg ? (
+                <button
+                  onClick={() => {
+                    cancelAuto();
+                    goNext();
+                  }}
+                  className="flex h-28 w-28 flex-col items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-cyan-500 text-3xl font-black text-black shadow-2xl shadow-emerald-500/40 transition hover:scale-105"
+                >
+                  →<span className="text-xs">Next</span>
                 </button>
               ) : (
                 phase !== "review" && (
                   <button
-                    onClick={phase === "listening" ? reset : phase === "recording" ? () => cancelRef.current?.() : selfMode ? recordSelf : tryIt}
-                    className={`btn-3d rounded-2xl px-7 py-3 font-black ${phase === "listening" || phase === "recording" ? "bg-rose-500" : "bg-gradient-to-r from-fuchsia-500 to-violet-600"}`}
+                    onClick={() => {
+                      cancelAuto();
+                      if (phase === "listening") reset();
+                      else if (phase === "recording") cancelRef.current?.();
+                      else say();
+                    }}
+                    className={`relative flex h-28 w-28 flex-col items-center justify-center rounded-full text-3xl font-black shadow-2xl transition hover:scale-105 ${
+                      phase === "listening" || phase === "recording"
+                        ? "bg-rose-500 shadow-rose-500/50"
+                        : "bg-gradient-to-br from-fuchsia-500 to-violet-600 shadow-fuchsia-500/40"
+                    }`}
                   >
-                    {phase === "listening" || phase === "recording"
-                      ? "■ Stop"
-                      : phase === "fail"
-                        ? "🎤 Try again"
-                        : passed.has(tw.id)
-                          ? "🎤 Practice again"
-                          : selfMode
-                            ? "🔴 Record & check"
-                            : "🎤 Say it!"}
+                    {(phase === "listening" || phase === "recording") && (
+                      <span className="absolute inset-0 animate-ping rounded-full bg-rose-500/40" />
+                    )}
+                    <span className="relative">{phase === "listening" || phase === "recording" ? "■" : selfMode ? "🔴" : "🎤"}</span>
+                    <span className="relative text-xs">
+                      {phase === "listening" || phase === "recording"
+                        ? "Stop"
+                        : phase === "fail"
+                          ? "Try again"
+                          : phase === "pass"
+                            ? "Again"
+                            : selfMode
+                              ? "Record"
+                              : "Say it!"}
+                    </span>
                   </button>
                 )
               )}
+
+              <button
+                onClick={() => {
+                  cancelAuto();
+                  hear(0.6);
+                }}
+                disabled={phase === "listening" || phase === "recording"}
+                className="flex h-16 w-16 flex-col items-center justify-center rounded-full bg-white/10 text-xl ring-1 ring-white/15 transition hover:scale-105 hover:bg-white/15 disabled:opacity-40"
+                title="Slow"
+              >
+                🐢<span className="text-[10px] font-bold">Slow</span>
+              </button>
             </div>
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/60">
+
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-white/60">
+              <label className="flex cursor-pointer items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 ring-1 ring-white/10">
+                <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} className="accent-fuchsia-400" />
+                ⚡ Auto mode (next twister / repeat automatically)
+              </label>
               <label className="flex items-center gap-1.5">
                 🔁 Repeat each twister
                 <select value={drill} onChange={(e) => setDrill(Number(e.target.value))} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 font-bold text-white">

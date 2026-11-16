@@ -47,8 +47,15 @@ export default function MicCheck() {
   const [engine, setEngineState] = useState<Engine>("browser");
   const [modelPct, setModelPct] = useState<number | null>(null);
   useEffect(() => {
+    const e = getEngine();
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEngineState(getEngine());
+    setEngineState(e);
+    // Built-in recognizer chosen: download it quietly in the background so it's ready before
+    // the learner presses "Say it" (the first download takes a while).
+    if (isBuiltin(e)) {
+      const t = setTimeout(() => loadWhisper(undefined, e).catch(() => {}), 2500);
+      return () => clearTimeout(t);
+    }
   }, []);
   const stream = useRef<MediaStream | null>(null);
   const raf = useRef(0);

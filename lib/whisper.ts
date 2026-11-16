@@ -55,6 +55,17 @@ export function setMicDevice(id: string) {
 
 type Transcriber = (audio: Float32Array) => Promise<{ text: string } | { text: string }[]>;
 const loadingByModel: Record<string, Promise<Transcriber> | undefined> = {};
+const ready = new Set<string>();
+
+/** Download progress (0–100) of the recognizer model, for anyone who wants to show it. */
+const progressSubs = new Set<(pct: number) => void>();
+export function onModelProgress(fn: (pct: number) => void) {
+  progressSubs.add(fn);
+  return () => progressSubs.delete(fn);
+}
+export function isModelReady(engine: Engine = getEngine()) {
+  return ready.has(MODELS[engine === "builtin-plus" ? "builtin-plus" : "builtin"]);
+}
 
 /** Loads the chosen built-in model once. `onProgress` receives 0–100 while downloading. */
 export function loadWhisper(onProgress?: (pct: number) => void, engine: Engine = getEngine()): Promise<Transcriber> {
@@ -72,20 +83,32 @@ export function loadWhisper(onProgress?: (pct: number) => void, engine: Engine =
       if (p.status === "progress" && p.file) {
         files[p.file] = { loaded: p.loaded ?? 0, total: p.total ?? 1 };
         const all = Object.values(files);
-        const pct = (all.reduce((a, f) => a + f.loaded, 0) / Math.max(1, all.reduce((a, f) => a + f.total, 0))) * 100;
-        onProgress?.(Math.round(pct));
+        const pct = Math.round((all.reduce((a, f) => a + f.loaded, 0) / Math.max(1, all.reduce((a, f) => a + f.total, 0))) * 100);
+        onProgress?.(pct);
+        progressSubs.forEach((s) => s(pct));
       }
     };
-    const webgpu = typeof navigator !== "undefined" && "gpu" in navigator;
+    // Hide harmless engine warnings (they showed up as "issues" in the Next.js dev overlay).
     try {
-      return await tf.pipeline("automatic-speech-recognition", MODEL, { device: webgpu ? "webgpu" : "wasm", progress_callback });
-    } catch {
-      return await tf.pipeline("automatic-speech-recognition", MODEL, { device: "wasm", progress_callback });
-    }
+      const env = (tf as unknown as { env?: { backends?: { onnx?: { logLevel?: string } } } }).env;
+      if (env?.backends?.onnx) env.backends.onnx.logLevel = "error";
+    } catch {}
+    // WASM only: WebGPU start-up can hang (instead of failing) on some PCs and browsers.
+    return await tf.pipeline("automatic-speech-recognition", MODEL, {
+      device: "wasm",
+      progress_callback,
+      session_options: { logSeverityLevel: 3 }, // errors only, no warnings in the console
+    });
   })());
-  loading.catch(() => {
-    delete loadingByModel[MODEL];
-  });
+  loading.then(
+    () => {
+      ready.add(MODEL);
+      progressSubs.forEach((s) => s(100));
+    },
+    () => {
+      delete loadingByModel[MODEL];
+    },
+  );
   return loading;
 }
 
@@ -208,6 +231,14 @@ export function listenBuiltin(opts: {
       return { transcript: "", error: (e as Error).name === "NotAllowedError" ? "not-allowed" : "audio-capture" };
     }
     const modelP = loadWhisper(); // loads in parallel with recording (instant after the first time)
+    // First time only: show the download progress instead of a silent "recognizing".
+    let downloading = !isModelReady();
+    const unsub = onModelProgress((pct) => {
+      if (!downloading) return;
+      if (pct >= 100) downloading = false;
+      else opts.onInterim(`… downloading the recognizer ${pct}% (first time only) …`);
+    });
+    modelP.finally(() => unsub());
     const ctx = new AudioContext();
     await ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(stream);
