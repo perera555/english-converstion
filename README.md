@@ -1,36 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SpeakUp English (free)
 
-## Getting Started
+A free English speaking practice app from **Beginner (A1) to Native (C2)**. It runs in the browser and can be installed on Windows, Mac, iPhone/iPad, Android and Chromebook.
 
-First, run the development server:
+## What's inside
+
+| Section | Content |
+| --- | --- |
+| 💬 Conversations | **1,250** dialogues (250 per level: Beginner, Elementary, Intermediate, Advanced, Native) |
+| 📝 Essays | **1,000** essays (200 per level) |
+| 👅 Tongue Twisters | **1,000** twisters in 20 chapters / 5 levels, with a pass-to-unlock challenge |
+| 🎓 IELTS & PTE | **160** model essays (4 question types × 20 topics × 2 exams) + timed writing practice |
+
+## Features
+
+- 🎥 **Real videos**: verified YouTube lessons with real native speakers, embedded per topic.
+- 🎬 **Animated video mode**: each dialogue as a 3D scene with talking characters and karaoke subtitles.
+- 🎤 **Karaoke**: words light up as they're spoken (Web Speech API voices, speed and accent picker).
+- 🗣️ **Voice scoring**: shadowing, role-play and the twister challenge check your speech word by word.
+- ⏱️ **15 minutes a day**: the timer counts only while you practice. You get a goal-complete popup, bonus time, streaks and a weekly chart.
+- 📲 **Installable PWA** with a device-specific install guide.
+- Progress, scores and drafts are saved in the browser. No account is needed.
+
+Speech recognition works in Chrome, Edge, Safari and Samsung Internet. Firefox can play voices but cannot score speech.
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Content is generated at build time from templates in `lib/templates/`, `lib/essays/`, `lib/twisters.ts` and `lib/exam-topics.ts`.

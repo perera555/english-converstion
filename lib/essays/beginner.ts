@@ -1,0 +1,152 @@
+import type { EssayTemplate } from "../essay-types";
+import { CITIES } from "../templates/pools";
+
+export const beginnerEssays: EssayTemplate[] = [
+  {
+    key: "best-friend",
+    topic: "Friends",
+    emoji: "🧑‍🤝‍🧑",
+    title: "My best friend {f}",
+    slots: {
+      f: ["Anna|She|her|Her|she", "Tom|He|him|His|he", "Lily|She|her|Her|she", "Sam|He|him|His|he", "Mia|She|her|Her|she", "Jake|He|him|His|he"],
+      age: ["twelve", "fifteen", "twenty", "twenty-five", "thirty"],
+      city: CITIES,
+      hobby: ["playing football", "drawing", "reading books", "playing the piano", "cooking"],
+      food: ["pizza", "rice and curry", "ice cream", "noodles", "chocolate cake"],
+    },
+    paragraphs: [
+      ["My name is {A}, and my best friend is {f}.", "{f:1} is {age} years old.", "{f:1} lives in {city}, near my house.", "We met at school many years ago."],
+      ["{f:1} likes {hobby}.", "On weekends, we often go to the park together.", "{f:3} favorite food is {food}.", "I like it too!"],
+      ["{f:1} is kind, funny, and very helpful.", "When I am sad, {f:4} always makes me smile.", "I am very happy to have a friend like {f:2}."],
+    ],
+    vocab: [["Best friend", "Your closest friend"], ["Kind", "Nice and caring"], ["Helpful", "Likes to help other people"], ["Near", "Not far from"]],
+    tip: "Use he/she for the subject (\"She lives...\") and him/her for the object (\"I like her\").",
+  },
+  {
+    key: "routine",
+    topic: "Daily Life",
+    emoji: "⏰",
+    title: "My day: up at {t}",
+    slots: {
+      t: ["six o'clock", "half past six", "seven o'clock", "seven thirty"],
+      breakfast: ["bread and eggs", "rice and fish", "cereal and milk", "fruit and yogurt"],
+      transport: ["by bus", "by train", "by bike", "on foot", "by car"],
+      place: ["school|study", "the office|work", "the hospital|work", "university|study"],
+      evening: ["watch TV with my family", "read a book", "play games with my brother", "go for a walk"],
+    },
+    paragraphs: [
+      ["My name is {A}.", "Every day, I get up at {t}.", "First, I wash my face and brush my teeth.", "Then I eat breakfast.", "I usually have {breakfast}."],
+      ["After breakfast, I go to {place} {transport}.", "I {place:1} there from morning to afternoon.", "At lunchtime, I eat with my friends."],
+      ["In the evening, I come home and have dinner.", "After dinner, I {evening}.", "I go to bed at about ten o'clock.", "I like my simple routine."],
+    ],
+    vocab: [["Get up", "Leave your bed"], ["Usually", "Most of the time"], ["Routine", "What you do every day"], ["Lunchtime", "The time for lunch"]],
+    tip: "Sequence words make your writing clear: first, then, after that, finally.",
+  },
+  {
+    key: "family",
+    topic: "Family",
+    emoji: "👨‍👩‍👧",
+    title: "My family of {n}",
+    slots: {
+      n: ["four|one brother", "five|two sisters", "three|no brothers or sisters", "six|a brother and two sisters"],
+      dad: ["a teacher", "a driver", "a farmer", "an engineer", "a cook"],
+      mum: ["a nurse", "a doctor", "a shop owner", "an artist", "a teacher"],
+      pet: ["a small dog", "a lazy cat", "two goldfish", "a talking parrot"],
+    },
+    paragraphs: [
+      ["Hello! I am {A}.", "There are {n} people in my family.", "I have {n:1}."],
+      ["My father is {dad}.", "He works very hard.", "My mother is {mum}.", "She is very kind and smart."],
+      ["We also have {pet}.", "On Sundays, we eat lunch together and talk a lot.", "I love my family very much."],
+    ],
+    vocab: [["Family", "Parents, children and relatives"], ["Work hard", "Do a lot of work"], ["Together", "With each other"], ["Pet", "An animal that lives with you"]],
+    tip: "\"There are + number + people\" is a great way to start describing a group.",
+  },
+  {
+    key: "food",
+    topic: "Food & Drink",
+    emoji: "🍜",
+    title: "My favorite food: {food:1}",
+    slots: {
+      food: ["pizza|Pizza|cheese, tomato and bread", "sushi|Sushi|rice, fish and seaweed", "pasta|Pasta|noodles, sauce and cheese", "curry|Curry|rice, vegetables and spices", "tacos|Tacos|meat, beans and vegetables"],
+      who: ["my mother", "my grandmother", "my father", "my aunt"],
+      day: ["Fridays", "Saturdays", "Sundays", "special days"],
+    },
+    paragraphs: [
+      ["My name is {A}, and my favorite food is {food}.", "It has {food:2}.", "It is delicious!"],
+      ["People eat it in many countries.", "I usually eat it on {day}.", "Sometimes {who} makes it at home.", "It tastes better than restaurant food."],
+      ["I also like fruit and salad, because they are healthy.", "But {food} is always number one for me."],
+    ],
+    vocab: [["Favorite", "The one you like most"], ["Delicious", "Very tasty"], ["Healthy", "Good for your body"], ["Tastes", "Has a flavor"]],
+    tip: "Use \"because\" to give a reason: \"I like salad because it is healthy.\"",
+  },
+  {
+    key: "hometown",
+    topic: "Places",
+    emoji: "🏘️",
+    title: "My hometown, {city}",
+    slots: {
+      city: CITIES,
+      size: ["big and busy", "small and quiet", "old and beautiful", "modern and clean"],
+      place: ["a big park", "a famous museum", "a beautiful river", "a busy market", "a long beach"],
+      people: ["friendly", "helpful", "kind", "warm"],
+    },
+    paragraphs: [
+      ["My name is {A}.", "I am from {city}.", "My hometown is {size}."],
+      ["There is {place} in the center.", "Many tourists visit it every year.", "There are also many shops and cafés."],
+      ["The people in my town are very {people}.", "The food is great, too.", "Please visit my hometown one day!"],
+    ],
+    vocab: [["Hometown", "The town where you grew up"], ["Busy", "With many people and activity"], ["Tourists", "People who travel to visit places"], ["Center", "The middle"]],
+    tip: "Use \"There is\" for one thing and \"There are\" for many things.",
+  },
+  {
+    key: "weekend",
+    topic: "Hobbies",
+    emoji: "🌞",
+    title: "My weekend",
+    slots: {
+      sat: ["play football with my friends", "go swimming", "visit my grandparents", "go shopping with my mother", "ride my bike"],
+      sun: ["clean my room", "watch movies", "cook lunch with my family", "read comics", "go to the beach"],
+      feel: ["happy", "relaxed", "tired but happy"],
+    },
+    paragraphs: [
+      ["I am {A}, and I love weekends!", "I don't go to school or work on Saturday and Sunday."],
+      ["On Saturday morning, I {sat}.", "In the afternoon, I meet my friends.", "We talk and laugh a lot."],
+      ["On Sunday, I {sun}.", "In the evening, I get ready for the new week.", "After the weekend, I always feel {feel}."],
+    ],
+    vocab: [["Weekend", "Saturday and Sunday"], ["Get ready", "Prepare"], ["Laugh", "Make a happy sound"], ["Relaxed", "Calm, not stressed"]],
+    tip: "Use \"on\" with days: on Saturday, on Sunday morning.",
+  },
+  {
+    key: "pet",
+    topic: "Animals",
+    emoji: "🐶",
+    title: "My pet {p:1}",
+    slots: {
+      p: ["dog|Max|He|brown|run in the park", "cat|Luna|She|white|sleep in the sun", "rabbit|Coco|She|grey|eat carrots", "parrot|Kiwi|He|green|sing songs", "hamster|Peanut|He|orange|run on his wheel"],
+      age: ["two", "three", "four", "five"],
+    },
+    paragraphs: [
+      ["My name is {A}, and I have a {p}.", "{p:2} name is {p:1}.", "{p:2} is {age} years old."],
+      ["{p:1} is small and {p:3}.", "{p:2} loves to {p:4}.", "Every day, I give {p:1} food and water."],
+      ["{p:1} is my best friend at home.", "When I come back from school, {p:1} is always happy to see me."],
+    ],
+    vocab: [["Pet", "An animal that lives with you"], ["Loves to", "Really likes to"], ["Every day", "Each day"], ["Happy to see", "Glad when someone arrives"]],
+    tip: "Many English speakers call their pets \"he\" or \"she\", not \"it\".",
+  },
+  {
+    key: "season",
+    topic: "Weather",
+    emoji: "🍂",
+    title: "My favorite season: {s:1}",
+    slots: {
+      s: ["summer|Summer|hot and sunny|swim in the sea|ice cream", "winter|Winter|cold and snowy|build snowmen|hot chocolate", "spring|Spring|warm and fresh|see flowers in the park|fresh fruit", "autumn|Autumn|cool and windy|walk on the colorful leaves|warm soup"],
+    },
+    paragraphs: [
+      ["Hi, I'm {A}.", "My favorite season is {s}.", "In {s}, the weather is {s:2}."],
+      ["I love to {s:3}.", "I also like to eat {s:4}.", "It makes me very happy."],
+      ["Some people don't like {s}, but I think it is the best season of the year.", "What is your favorite season?"],
+    ],
+    vocab: [["Season", "Summer, autumn, winter or spring"], ["Weather", "Sun, rain, wind, snow..."], ["Fresh", "New and clean"], ["The best", "Better than all others"]],
+    tip: "Seasons usually don't need \"the\" or a capital letter: \"I love summer.\"",
+  },
+];

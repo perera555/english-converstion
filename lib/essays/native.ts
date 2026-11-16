@@ -1,0 +1,146 @@
+import type { EssayTemplate } from "../essay-types";
+
+export const nativeEssays: EssayTemplate[] = [
+  {
+    key: "quit-social",
+    topic: "Native",
+    emoji: "📵",
+    title: "I quit {app} for a month. Here's what happened",
+    slots: {
+      app: ["Instagram", "TikTok", "social media", "my phone after 9 p.m.", "YouTube"],
+      win: ["I read four whole books", "I actually started sleeping eight hours a night", "I picked up the guitar again", "I called my grandma every Sunday"],
+    },
+    paragraphs: [
+      ["OK, confession time.", "I used to check {app} the second I woke up, before I'd even opened my eyes properly.", "So last month, I decided to go cold turkey."],
+      ["The first few days were rough, not gonna lie.", "I kept reaching for my phone out of pure muscle memory.", "But by the end of week one, something weird happened: I stopped missing it."],
+      ["Without all that endless scrolling, I suddenly had hours to kill.", "{win}, which honestly blew my mind."],
+      ["Am I deleting it forever?", "Probably not.", "But I've learned that I'm the one in charge, not the app, and that's a game changer."],
+    ],
+    vocab: [["Go cold turkey", "Stop a habit suddenly and completely"], ["Not gonna lie", "Honestly (very informal)"], ["Hours to kill", "Free time with nothing planned"], ["Blew my mind", "Amazed me"], ["Game changer", "Something that changes everything"]],
+    tip: "Blog-style English uses short, punchy sentences and spoken expressions like \"OK, confession time.\"",
+  },
+  {
+    key: "coffee",
+    topic: "Native",
+    emoji: "☕",
+    title: "Confessions of a {drink} addict",
+    slots: {
+      drink: ["coffee", "cold brew", "espresso", "latte", "bubble tea"],
+      n: ["three", "four", "five"],
+    },
+    paragraphs: [
+      ["Let's get one thing straight: I am not a morning person.", "Without my {drink}, I'm basically a zombie with a to-do list."],
+      ["On a good day, I'm down to {n} cups.", "On a bad day? Let's just say the barista knows my order by heart and doesn't even bother asking anymore."],
+      ["My friends keep telling me to cut back, and deep down, I know they've got a point.", "Every time I try, though, I end up with a splitting headache and zero patience."],
+      ["So here's the deal: I'm not quitting, but I am cutting back, one cup at a time.", "Wish me luck. I'm gonna need it."],
+    ],
+    vocab: [["Let's get one thing straight", "Let me be clear"], ["Know by heart", "Have memorized"], ["Cut back", "Reduce"], ["Splitting headache", "A very painful headache"], ["Here's the deal", "This is the situation / plan"]],
+    tip: "\"Gonna\", \"wanna\" and \"gotta\" appear in casual writing like blogs, but never in formal essays.",
+  },
+  {
+    key: "lost",
+    topic: "Travel",
+    emoji: "🧭",
+    title: "The day I got totally lost in {city}",
+    slots: {
+      city: ["Tokyo", "Venice", "Istanbul", "Marrakech", "London", "Bangkok"],
+      helper: ["an old man selling flowers", "a group of teenagers", "a super chatty taxi driver", "a woman walking her dog"],
+    },
+    paragraphs: [
+      ["So there I was, in the middle of {city}, with a dead phone and absolutely no clue where my hotel was.", "Classic me."],
+      ["I'd been wandering around for hours, totally in my own little world, and I hadn't been paying attention to street names.", "By the time I realized, it was getting dark and I was starting to freak out."],
+      ["That's when {helper} came to the rescue.", "We didn't speak the same language, but somehow, with a lot of pointing and laughing, they walked me all the way back."],
+      ["Looking back, getting lost turned out to be the highlight of the trip.", "Sometimes the best stories happen when things don't go according to plan."],
+    ],
+    vocab: [["No clue", "No idea"], ["In my own little world", "Not paying attention to what's around"], ["Freak out", "Panic"], ["Came to the rescue", "Helped in a difficult moment"], ["According to plan", "As planned"]],
+    tip: "\"So there I was...\" is the classic way native speakers start telling a dramatic story.",
+  },
+  {
+    key: "adulting",
+    topic: "Everyday Life",
+    emoji: "🏠",
+    title: "Adulting is hard: lessons from my first apartment",
+    slots: {
+      fail: ["I shrank all my favorite sweaters in the dryer", "I set off the smoke alarm making toast", "I forgot to pay the electricity bill", "I killed three houseplants in a month"],
+      lesson: ["read the labels", "make a budget and stick to it", "set reminders for literally everything", "call my mom more often"],
+    },
+    paragraphs: [
+      ["Moving into my first apartment felt amazing for about a week.", "Then reality kicked in."],
+      ["Nobody tells you how much stuff you have to keep track of.", "In my first month alone, {fail}.", "Yeah, it was a lot."],
+      ["But here's the thing: every mistake taught me something.", "Now I {lesson}, and things run way more smoothly."],
+      ["I'm still figuring it out, to be honest.", "But I've realized that being an adult isn't about having it all together; it's about winging it with confidence."],
+    ],
+    vocab: [["Adulting", "Doing grown-up responsibilities (slang)"], ["Reality kicked in", "The truth became clear"], ["Keep track of", "Remember and manage"], ["Have it all together", "Be organized and in control"], ["Wing it", "Improvise without preparation"]],
+    tip: "\"Here's the thing:\" signals that your main point is coming.",
+  },
+  {
+    key: "obsessed",
+    topic: "Hobbies",
+    emoji: "🎯",
+    title: "Why I'm obsessed with {h}",
+    slots: {
+      h: ["rock climbing", "baking bread", "board games", "running", "photography", "gardening"],
+      when: ["a couple of years ago", "during lockdown", "last summer", "on a total whim"],
+    },
+    paragraphs: [
+      ["I got into {h} {when}, and honestly, it's taken over my life.", "In the best way possible."],
+      ["At first, I was pretty terrible at it.", "Like, embarrassingly bad.", "But there's something about slowly getting better that's super addictive."],
+      ["It's also the one time my brain completely switches off.", "No emails, no stress, no overthinking. Just me and the thing I love."],
+      ["If you've been on the fence about trying a new hobby, this is your sign.", "Just go for it. You've got nothing to lose."],
+    ],
+    vocab: [["Get into", "Start being interested in"], ["Take over", "Become the main thing"], ["On a whim", "Suddenly, without planning"], ["On the fence", "Undecided"], ["Go for it", "Try it; do it"]],
+    tip: "\"Like,\" as a filler adds emphasis in very casual speech: \"Like, embarrassingly bad.\"",
+  },
+  {
+    key: "abroad",
+    topic: "Culture",
+    emoji: "✈️",
+    title: "Things nobody tells you about moving to {country}",
+    slots: {
+      country: ["Canada", "Australia", "the UK", "the US", "Ireland", "New Zealand"],
+      shock: ["how much small talk there is", "how early everyone eats dinner", "how expensive rent is", "how often people say sorry"],
+    },
+    paragraphs: [
+      ["Moving to {country} was the best decision I've ever made, but boy, was it a learning curve."],
+      ["First off, nobody warned me about {shock}.", "It took me months to get used to it."],
+      ["Then there's the homesickness.", "It sneaks up on you at the weirdest moments, like when you smell a dish your mom used to cook."],
+      ["But you know what? It gets easier.", "You find your people, you build a routine, and one day you realize this place actually feels like home."],
+    ],
+    vocab: [["Boy, was it...", "Wow, it really was... (emphasis)"], ["Learning curve", "The process of learning something new"], ["Sneak up on you", "Happen without warning"], ["Find your people", "Meet friends who suit you"], ["Feel like home", "Feel comfortable and familiar"]],
+    tip: "\"Boy, was it a learning curve\" uses inversion for emotional emphasis, very common in natural speech.",
+  },
+  {
+    key: "gym",
+    topic: "Health",
+    emoji: "🏋️",
+    title: "My love-hate relationship with {g}",
+    slots: {
+      g: ["the gym", "running", "yoga class", "my bike", "early morning workouts"],
+    },
+    paragraphs: [
+      ["Every January, I swear this is the year I'll finally get fit.", "And every February, I'm back on the couch with a bag of chips."],
+      ["The problem isn't the exercise itself.", "Once I'm there, I actually kind of enjoy it.", "It's getting off the couch that's the real workout."],
+      ["Lately, I've been trying a new trick: I tell myself I only have to do ten minutes.", "Nine times out of ten, I end up doing the whole thing."],
+      ["So yeah, {g} and I are still on and off.", "But I'm showing up more than I used to, and that's a win in my book."],
+    ],
+    vocab: [["Swear", "Promise strongly"], ["Get fit", "Become physically healthy"], ["Nine times out of ten", "Almost always"], ["On and off", "Sometimes yes, sometimes no"], ["A win in my book", "A success, in my opinion"]],
+    tip: "Natives often exaggerate for humor: \"getting off the couch is the real workout.\"",
+  },
+  {
+    key: "nothing",
+    topic: "Native",
+    emoji: "🛋️",
+    title: "In defense of doing absolutely nothing",
+    slots: {
+      day: ["Sunday", "a rainy Saturday", "a day off", "a long weekend"],
+    },
+    paragraphs: [
+      ["We live in a world that's obsessed with being productive.", "Even our hobbies have to be side hustles now."],
+      ["But lately, I've started to embrace the fine art of doing absolutely nothing.", "No plans, no goals, no guilt. Just a whole {day} of lying around."],
+      ["And guess what? I come out of it feeling recharged and way more creative.", "Turns out, my brain actually needs downtime to work properly."],
+      ["So next time someone asks what you did this weekend and the answer is \"nothing\", own it.", "You're not lazy. You're recharging."],
+    ],
+    vocab: [["Side hustle", "Extra work to earn money"], ["Embrace", "Accept happily"], ["Recharged", "Full of energy again"], ["Downtime", "Time to rest"], ["Own it", "Be proud of it; don't apologize"]],
+    tip: "\"Turns out,\" (without \"it\") is a casual way to say \"it turns out that\".",
+  },
+];
