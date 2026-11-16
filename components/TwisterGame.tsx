@@ -8,6 +8,7 @@ import { scoreSpeech, tokenize } from "@/lib/score";
 import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
 import { requestVoiceCheck } from "@/lib/voice-check";
 import RecognizerChip from "./RecognizerChip";
+import DeviceBar from "./DeviceBar";
 import { getEngine, getMicDevice } from "@/lib/whisper";
 
 /* ------------------------------------------------------------ progress store */
@@ -369,6 +370,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
             )}
             {phase !== "listening" && phase !== "recording" && phase !== "review" && (
               <div className="mt-4 flex flex-col items-center gap-2">
+                <DeviceBar />
                 {!selfMode && <RecognizerChip heard="" listening={false} />}
                 <label className="flex cursor-pointer items-center gap-2 text-xs text-white/70">
                   <input type="checkbox" checked={selfMode} onChange={(e) => setSelfMode(e.target.checked)} className="accent-emerald-400" />

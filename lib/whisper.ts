@@ -10,15 +10,26 @@
 import { publishMicLevel } from "./mic-level";
 
 const LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.1/dist/transformers.min.js";
-const MODEL = "Xenova/whisper-tiny.en";
 const ENGINE_KEY = "ec-recognizer";
 const DEVICE_KEY = "ec-mic-device";
 
-export type Engine = "browser" | "builtin";
+/** "builtin" = Whisper tiny (fast, ~40 MB); "builtin-plus" = Whisper base (more accurate, ~75 MB). */
+export type Engine = "browser" | "builtin" | "builtin-plus";
+export const ENGINES: { id: Engine; label: string; note: string }[] = [
+  { id: "browser", label: "🌐 Browser", note: "fast · Chrome/Edge/Safari" },
+  { id: "builtin", label: "🧠 Built-in", note: "works with USB/Bluetooth · 40 MB once" },
+  { id: "builtin-plus", label: "🧠 Built-in+", note: "most accurate · 75 MB once" },
+];
+const MODELS: Record<Exclude<Engine, "browser">, string> = {
+  builtin: "Xenova/whisper-tiny.en",
+  "builtin-plus": "Xenova/whisper-base.en",
+};
+export const isBuiltin = (e: Engine) => e !== "browser";
 
 export function getEngine(): Engine {
   try {
-    return localStorage.getItem(ENGINE_KEY) === "builtin" ? "builtin" : "browser";
+    const v = localStorage.getItem(ENGINE_KEY);
+    return v === "builtin" || v === "builtin-plus" ? v : "browser";
   } catch {
     return "browser";
   }
@@ -42,12 +53,14 @@ export function setMicDevice(id: string) {
 }
 
 type Transcriber = (audio: Float32Array) => Promise<{ text: string } | { text: string }[]>;
-let loading: Promise<Transcriber> | null = null;
+const loadingByModel: Record<string, Promise<Transcriber> | undefined> = {};
 
-/** Loads the model once. `onProgress` receives 0–100 while downloading. */
-export function loadWhisper(onProgress?: (pct: number) => void): Promise<Transcriber> {
-  if (loading) return loading;
-  loading = (async () => {
+/** Loads the chosen built-in model once. `onProgress` receives 0–100 while downloading. */
+export function loadWhisper(onProgress?: (pct: number) => void, engine: Engine = getEngine()): Promise<Transcriber> {
+  const MODEL = MODELS[engine === "builtin-plus" ? "builtin-plus" : "builtin"];
+  const existing = loadingByModel[MODEL];
+  if (existing) return existing;
+  const loading = (loadingByModel[MODEL] = (async () => {
     // Imported at runtime from the CDN so it never enters the app bundle.
     const importer = new Function("u", "return import(u)") as (u: string) => Promise<Record<string, unknown>>;
     const tf = (await importer(LIB)) as {
@@ -68,9 +81,9 @@ export function loadWhisper(onProgress?: (pct: number) => void): Promise<Transcr
     } catch {
       return await tf.pipeline("automatic-speech-recognition", MODEL, { device: "wasm", progress_callback });
     }
-  })();
+  })());
   loading.catch(() => {
-    loading = null;
+    delete loadingByModel[MODEL];
   });
   return loading;
 }

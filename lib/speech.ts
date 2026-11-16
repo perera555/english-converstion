@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { scoreSpeech, tokenize } from "./score";
 import { pingActivity } from "./practice";
-import { getEngine, listenBuiltin } from "./whisper";
+import { getEngine, isBuiltin, listenBuiltin } from "./whisper";
 
 /* ---------------------------------------------------------------- voices */
 
@@ -211,14 +211,14 @@ export function micErrorMessage(error: string | undefined, transcript: string): 
   if (error === "unsupported")
     return "This browser has no voice recognizer. Open 🎧 Mic check at the top and switch on the built-in recognizer.";
   if (!transcript)
-    return getEngine() === "builtin"
+    return isBuiltin(getEngine())
       ? "🤔 We didn't hear anything. Speak a bit louder and closer to the mic, right after pressing the button."
       : "🤔 We didn't hear anything. If your mic works but this keeps happening, open 🎧 Mic check at the top and switch on the built-in recognizer.";
   return null;
 }
 
 export function recognitionSupported() {
-  return getEngine() === "builtin" || !!getRecognitionCtor();
+  return isBuiltin(getEngine()) || !!getRecognitionCtor();
 }
 
 export function listen(opts: {
@@ -227,8 +227,11 @@ export function listen(opts: {
   /** the sentence the learner should say; used to pick the best of several recognition guesses */
   target?: string;
 }): { done: Promise<{ transcript: string; error?: string }>; cancel: () => void } {
+  // Make sure no other mic recording (e.g. the Mic check meter) is running: some USB/Bluetooth
+  // headsets give silence to every stream when two recordings run at once.
+  window.dispatchEvent(new CustomEvent("release-mic"));
   // Built-in recognizer (Whisper in the browser) when the learner chose it in Mic check.
-  if (getEngine() === "builtin") {
+  if (isBuiltin(getEngine())) {
     pingActivity();
     const p = setInterval(pingActivity, 1000);
     const h = listenBuiltin({ onInterim: opts.onInterim, timeoutMs: opts.timeoutMs });

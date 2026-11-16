@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { listen, micErrorMessage, recognitionSupported, stopSpeech } from "@/lib/speech";
 import { finishVoiceCheck, markVoiceCheckPassed } from "@/lib/voice-check";
-import { getEngine, loadWhisper, setEngine, setMicDevice, type Engine } from "@/lib/whisper";
+import { ENGINES, getEngine, isBuiltin, loadWhisper, setEngine, setMicDevice, type Engine } from "@/lib/whisper";
 
 // Bluetooth, USB and wired headsets / earbuds, plus common brands.
 const HEADSET =
@@ -89,7 +90,10 @@ export default function MicCheck() {
       setOpen(true);
     };
     window.addEventListener("open-mic-check", onOpenPlain);
+    const onRelease = () => stopTestRef.current();
+    window.addEventListener("release-mic", onRelease);
     return () => {
+      window.removeEventListener("release-mic", onRelease);
       window.removeEventListener("open-mic-check", onOpenPlain);
       navigator.mediaDevices.removeEventListener?.("devicechange", onChange);
       window.removeEventListener("open-voice-check", onOpen);
@@ -134,6 +138,9 @@ export default function MicCheck() {
     setTesting(false);
     setLevel(0);
   };
+
+  const stopTestRef = useRef(stopTest);
+  stopTestRef.current = stopTest;
 
   const startTest = async (id = deviceId) => {
     stopTest();
@@ -209,48 +216,18 @@ export default function MicCheck() {
     }
     setRecog({ state: "listening", text: "" });
 
-    // While the recognizer listens, also measure the DEFAULT mic (the one the recognizer uses),
-    // so an empty result can be explained: wrong default mic vs. speech-service problem.
-    let defaultPeak = 0;
-    let monitorOk = false;
-    let mon: MediaStream | null = null;
-    let monCtx: AudioContext | null = null;
-    let monRaf = 0;
-    if (engine === "browser" && !/android|iphone|ipad|ipod/i.test(navigator.userAgent)) {
-      try {
-        mon = await navigator.mediaDevices.getUserMedia({ audio: true });
-        monCtx = new AudioContext();
-        const an = monCtx.createAnalyser();
-        an.fftSize = 512;
-        monCtx.createMediaStreamSource(mon).connect(an);
-        const data = new Uint8Array(an.frequencyBinCount);
-        monitorOk = true;
-        const loop = () => {
-          an.getByteTimeDomainData(data);
-          let p = 0;
-          for (const v of data) p = Math.max(p, Math.abs(v - 128));
-          defaultPeak = Math.max(defaultPeak, Math.min(1, p / 50));
-          monRaf = requestAnimationFrame(loop);
-        };
-        loop();
-      } catch {}
-    }
-
+    // Only ONE recording at a time: a second "monitor" stream can silence USB/Bluetooth headsets.
     const l = listen({ onInterim: (t) => setRecog({ state: "listening", text: t }), timeoutMs: 8000, target: TEST_PHRASE });
     const r = await l.done;
-    cancelAnimationFrame(monRaf);
-    mon?.getTracks().forEach((t) => t.stop());
-    monCtx?.close().catch(() => {});
 
     let msg = micErrorMessage(r.error, r.transcript);
-    if (engine === "browser" && !r.transcript && (!r.error || r.error === "no-speech" || r.error === "network")) {
-      const def = clean(defaultIn?.label || "your default microphone");
-      const working = inputs.find((d) => d.deviceId === deviceId && deviceId !== "default");
-      const sameMic = !working || clean(working.label) === def;
-      msg =
-        monitorOk && defaultPeak < 0.08 && !sameMic
-          ? `🎙️ The browser's recognizer listens to your DEFAULT microphone (${def}), which heard no sound, but "${clean(working!.label)}" works. Set it as the default (address-bar 🎙️ icon, or Windows/Mac Sound → Input), or simply switch on the built-in recognizer below.`
-          : "🔧 Your microphone works, but the browser's own recognizer can't hear it. This is common with some USB and Bluetooth headsets. Switch on the built-in recognizer below. It records through the same path as the working mic test.";
+    if (!r.transcript && (!r.error || r.error === "no-speech" || r.error === "network")) {
+      const quiet = peak < 0.15;
+      msg = quiet
+        ? "🔇 Your microphone is very quiet (the level bar in step 2 barely moved). Check the mic plug is in the MIC jack (usually pink) of your USB adapter, and set Input volume to 100 in Windows Settings → System → Sound → Input. Then test again."
+        : engine === "browser"
+          ? "🔧 Your mic works, but the browser's own recognizer heard no words. This is common with some USB and Bluetooth headsets. Switch on the 🧠 Built-in recognizer below and test again."
+          : "🤔 No words recognized. Speak a little louder and closer to the mic, then test again.";
     }
     setRecog(msg ? { state: "fail", text: r.transcript, msg } : { state: "ok", text: r.transcript });
   };
@@ -259,10 +236,10 @@ export default function MicCheck() {
     setEngine(e);
     setEngineState(e);
     setRecog({ state: "idle", text: "" });
-    if (e === "builtin") {
+    if (isBuiltin(e)) {
       setModelPct(0);
       try {
-        await loadWhisper((p) => setModelPct(p));
+        await loadWhisper((p) => setModelPct(p), e);
         setModelPct(100);
       } catch {
         setModelPct(-1);
@@ -301,12 +278,16 @@ export default function MicCheck() {
         {headsetName && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-[#07070f]" />}
       </button>
 
-      {toast && (
-        <div className="animate-pop fixed left-1/2 top-20 z-[60] -translate-x-1/2 rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-bold text-black shadow-2xl">{toast}</div>
-      )}
+      {toast &&
+        createPortal(
+          <div className="animate-pop fixed left-1/2 top-20 z-[60] -translate-x-1/2 rounded-2xl bg-emerald-500 px-4 py-2 text-sm font-bold text-black shadow-2xl">{toast}</div>,
+          document.body,
+        )}
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onClick={() => close(false)}>
+      {/* Rendered into <body>: inside the blurred header, "fixed" would be trapped in the header box. */}
+      {open &&
+        createPortal(
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/80 p-4 backdrop-blur-sm sm:items-center" onClick={() => close(false)}>
           <div className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/10 bg-[#12121f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black">{gate ? "🎤 Before you start: device check" : "🎧 Mic & headphones check"}</h3>
@@ -492,31 +473,29 @@ export default function MicCheck() {
 
               <div className="mt-3 rounded-xl bg-black/30 p-3 text-xs">
                 <div className="font-bold text-white">Recognizer</div>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => switchEngine("browser")}
-                    className={`rounded-lg px-2 py-2 font-bold ${engine === "browser" ? "bg-white text-black" : "bg-white/10"}`}
-                  >
-                    🌐 Browser
-                    <span className="block text-[10px] font-normal opacity-70">fast, Chrome/Edge/Safari</span>
-                  </button>
-                  <button
-                    onClick={() => switchEngine("builtin")}
-                    className={`rounded-lg px-2 py-2 font-bold ${engine === "builtin" ? "bg-emerald-400 text-black" : "bg-white/10"}`}
-                  >
-                    🧠 Built-in
-                    <span className="block text-[10px] font-normal opacity-70">works with USB/Bluetooth, any browser</span>
-                  </button>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {ENGINES.map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => switchEngine(e.id)}
+                      className={`rounded-lg px-2 py-2 font-bold ${engine === e.id ? "bg-emerald-400 text-black" : "bg-white/10"}`}
+                    >
+                      {e.label}
+                      <span className="block text-[10px] font-normal opacity-70">{e.note}</span>
+                    </button>
+                  ))}
                 </div>
-                {engine === "builtin" && modelPct !== null && modelPct < 100 && modelPct >= 0 && (
+                {isBuiltin(engine) && modelPct !== null && modelPct < 100 && modelPct >= 0 && (
                   <div className="mt-2">
-                    <div className="text-white/60">Downloading recognizer (one time, about 40 MB)… {modelPct}%</div>
+                    <div className="text-white/60">
+                      Downloading recognizer (one time, about {engine === "builtin-plus" ? "75" : "40"} MB)… {modelPct}%
+                    </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
                       <div className="h-full bg-emerald-400 transition-all" style={{ width: `${modelPct}%` }} />
                     </div>
                   </div>
                 )}
-                {engine === "builtin" && modelPct === 100 && <div className="mt-2 text-emerald-300">✓ Built-in recognizer ready. Press Test my voice.</div>}
+                {isBuiltin(engine) && modelPct === 100 && <div className="mt-2 text-emerald-300">✓ Built-in recognizer ready. Press Test my voice.</div>}
                 {modelPct === -1 && <div className="mt-2 text-rose-300">Couldn&apos;t download the recognizer. Check your internet and try again.</div>}
               </div>
             </section>
@@ -552,8 +531,9 @@ export default function MicCheck() {
               )}
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }

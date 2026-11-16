@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -91,8 +92,9 @@ export default function InstallButton() {
         Install app
       </button>
 
-      {help && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onClick={() => setHelp(false)}>
+      {help &&
+        createPortal(
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onClick={() => setHelp(false)}>
           <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#12121f] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold">Install SpeakUp (free)</h3>
             <p className="mt-1 text-xs text-white/50">Works on Windows, Mac, iPhone, iPad, Android and Chromebook.</p>
@@ -117,8 +119,9 @@ export default function InstallButton() {
               Got it
             </button>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }
