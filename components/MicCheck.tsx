@@ -93,6 +93,7 @@ export default function MicCheck() {
   // Opening the dialog grabs the mic automatically (this also reveals device names).
   useEffect(() => {
     if (open) startTest();
+    else stopTest(); // always release the mic when the dialog is closed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -114,23 +115,37 @@ export default function MicCheck() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  const session = useRef(0); // bumps on every stop, so a late-starting stream can't keep running
+  const audioCtx = useRef<AudioContext | null>(null);
+
   const stopTest = () => {
+    session.current++;
     cancelAnimationFrame(raf.current);
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
+    audioCtx.current?.close().catch(() => {});
+    audioCtx.current = null;
     setTesting(false);
     setLevel(0);
   };
 
   const startTest = async (id = deviceId) => {
     stopTest();
+    const mine = session.current;
     setError("");
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: id === "default" ? true : { deviceId: { exact: id } } });
+      // The dialog was closed (or the test restarted) while the mic was starting: release it.
+      if (mine !== session.current) {
+        s.getTracks().forEach((t) => t.stop());
+        return;
+      }
       stream.current = s;
       setTesting(true);
       await refresh(false); // device names appear after permission is granted
+      if (mine !== session.current) return;
       const ctx = new AudioContext();
+      audioCtx.current = ctx;
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       ctx.createMediaStreamSource(s).connect(analyser);
@@ -142,7 +157,7 @@ export default function MicCheck() {
         const l = Math.min(1, p / 50);
         setLevel(l);
         setPeak((x) => Math.max(x, l));
-        raf.current = requestAnimationFrame(loop);
+        if (mine === session.current) raf.current = requestAnimationFrame(loop);
       };
       loop();
     } catch {

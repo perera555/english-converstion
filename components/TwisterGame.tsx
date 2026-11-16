@@ -8,6 +8,7 @@ import { scoreSpeech, tokenize } from "@/lib/score";
 import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
 import { requestVoiceCheck } from "@/lib/voice-check";
 import RecognizerChip from "./RecognizerChip";
+import { getMicDevice } from "@/lib/whisper";
 
 /* ------------------------------------------------------------ progress store */
 
@@ -68,7 +69,21 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
     if (voices.length && !voice) setVoice(voices[0].name);
   }, [voices, voice]);
 
-  const [phase, setPhase] = useState<"idle" | "speaking" | "listening" | "pass" | "fail">("idle");
+  const [phase, setPhase] = useState<"idle" | "speaking" | "listening" | "recording" | "review" | "pass" | "fail">("idle");
+  const [selfMode, setSelfModeState] = useState(false);
+  const [selfUrl, setSelfUrl] = useState("");
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSelfModeState(localStorage.getItem("ec-selfcheck") === "1");
+    } catch {}
+  }, []);
+  const setSelfMode = (on: boolean) => {
+    setSelfModeState(on);
+    try {
+      localStorage.setItem("ec-selfcheck", on ? "1" : "0");
+    } catch {}
+  };
   const [word, setWord] = useState(-1);
   const [heard, setHeard] = useState("");
   const [result, setResult] = useState<{ score: number; hits: boolean[] } | null>(null);
@@ -126,6 +141,12 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
     const sc = scoreSpeech(tw.text, r.transcript, { fuzzy: "names" });
     setResult(sc);
     setHeard(r.transcript);
+    applyScore(sc.score);
+  };
+
+  // Records progress for one attempt (voice-checked or self-checked).
+  const applyScore = (score: number) => {
+    const sc = { score };
     const p = read();
     const tries = { ...p.tries, [tw.id]: (p.tries[tw.id] ?? 0) + 1 };
     const best = { ...p.best, [tw.id]: Math.max(p.best[tw.id] ?? 0, sc.score) };
@@ -140,6 +161,38 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
       write({ ...p, best, tries });
       setPhase("fail");
     }
+  };
+
+  /* ---- Self-check mode: record, compare with the correct voice, then rate yourself ---- */
+  const recordSelf = async () => {
+    reset();
+    setNotice("");
+    let s: MediaStream;
+    try {
+      const dev = getMicDevice();
+      s = await navigator.mediaDevices.getUserMedia({ audio: dev === "default" ? true : { deviceId: { ideal: dev } } });
+    } catch {
+      setNotice("🚫 Couldn't use the microphone. Allow mic access in the address bar, then try again.");
+      return;
+    }
+    const rec = new MediaRecorder(s);
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => chunks.push(e.data);
+    rec.onstop = () => {
+      s.getTracks().forEach((t) => t.stop());
+      if (selfUrl) URL.revokeObjectURL(selfUrl);
+      const url = URL.createObjectURL(new Blob(chunks, { type: rec.mimeType }));
+      setSelfUrl(url);
+      setPhase("review");
+      new Audio(url).play().catch(() => {});
+    };
+    setPhase("recording");
+    rec.start();
+    const timer = setTimeout(() => rec.state === "recording" && rec.stop(), 3000 + words.length * 600);
+    cancelRef.current = () => {
+      clearTimeout(timer);
+      if (rec.state === "recording") rec.stop();
+    };
   };
 
   const goNext = () => {
@@ -267,9 +320,49 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
                 <RecognizerChip heard={heard} listening />
               </div>
             )}
-            {phase !== "listening" && (
-              <div className="mt-4 flex justify-center">
-                <RecognizerChip heard="" listening={false} />
+            {phase === "recording" && (
+              <div className="mt-6 flex flex-col items-center gap-2 text-rose-300">
+                <span className="relative flex h-6 w-6">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex h-6 w-6 rounded-full bg-rose-500" />
+                </span>
+                <span className="text-sm font-bold">🔴 Recording… say the twister now</span>
+              </div>
+            )}
+            {phase === "review" && (
+              <div className="animate-pop mt-6 rounded-3xl bg-white/5 p-5 text-center ring-1 ring-white/10">
+                <div className="font-black">🎧 Compare: did you say it right?</div>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  <button onClick={() => selfUrl && new Audio(selfUrl).play()} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold">
+                    ▶ Hear my voice
+                  </button>
+                  <button onClick={() => hear(0.95)} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold">
+                    🔊 Hear correct
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap justify-center gap-2">
+                  <button
+                    onClick={() => {
+                      setResult({ score: 100, hits: words.map(() => true) });
+                      applyScore(100);
+                    }}
+                    className="btn-3d rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 py-2.5 font-black"
+                  >
+                    ✅ I said it right
+                  </button>
+                  <button onClick={recordSelf} className="rounded-2xl bg-white/10 px-5 py-2.5 font-bold">
+                    🔁 Try again
+                  </button>
+                </div>
+              </div>
+            )}
+            {phase !== "listening" && phase !== "recording" && phase !== "review" && (
+              <div className="mt-4 flex flex-col items-center gap-2">
+                {!selfMode && <RecognizerChip heard="" listening={false} />}
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-white/70">
+                  <input type="checkbox" checked={selfMode} onChange={(e) => setSelfMode(e.target.checked)} className="accent-emerald-400" />
+                  Self-check mode: record myself and compare (use if voice recognition doesn&apos;t work)
+                </label>
               </div>
             )}
 
@@ -308,7 +401,7 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
                 🐢 Slow
               </button>
               {phase === "pass" && (
-                <button onClick={tryIt} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
+                <button onClick={selfMode ? recordSelf : tryIt} className="btn-3d-ghost rounded-2xl bg-white/10 px-5 py-3 font-bold">
                   🔁 Say it again
                 </button>
               )}
@@ -317,12 +410,22 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
                   Next twister →
                 </button>
               ) : (
-                <button
-                  onClick={phase === "listening" ? reset : tryIt}
-                  className={`btn-3d rounded-2xl px-7 py-3 font-black ${phase === "listening" ? "bg-rose-500" : "bg-gradient-to-r from-fuchsia-500 to-violet-600"}`}
-                >
-                  {phase === "listening" ? "■ Stop" : phase === "fail" ? "🎤 Try again" : passed.has(tw.id) ? "🎤 Practice again" : "🎤 Say it!"}
-                </button>
+                phase !== "review" && (
+                  <button
+                    onClick={phase === "listening" ? reset : phase === "recording" ? () => cancelRef.current?.() : selfMode ? recordSelf : tryIt}
+                    className={`btn-3d rounded-2xl px-7 py-3 font-black ${phase === "listening" || phase === "recording" ? "bg-rose-500" : "bg-gradient-to-r from-fuchsia-500 to-violet-600"}`}
+                  >
+                    {phase === "listening" || phase === "recording"
+                      ? "■ Stop"
+                      : phase === "fail"
+                        ? "🎤 Try again"
+                        : passed.has(tw.id)
+                          ? "🎤 Practice again"
+                          : selfMode
+                            ? "🔴 Record & check"
+                            : "🎤 Say it!"}
+                  </button>
+                )
               )}
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-xs text-white/60">

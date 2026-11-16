@@ -75,24 +75,36 @@ export function loadWhisper(onProgress?: (pct: number) => void): Promise<Transcr
   return loading;
 }
 
-/** Converts recorded audio into 16 kHz mono samples for Whisper. */
-async function toPcm16k(blob: Blob): Promise<Float32Array> {
-  const buf = await blob.arrayBuffer();
-  const ctx = new AudioContext();
-  const decoded = await ctx.decodeAudioData(buf);
-  ctx.close().catch(() => {});
-  const length = Math.ceil(decoded.duration * 16000);
-  const off = new OfflineAudioContext(1, Math.max(1, length), 16000);
-  const src = off.createBufferSource();
-  src.buffer = decoded;
-  src.connect(off.destination);
-  src.start();
-  const out = await off.startRendering();
-  return out.getChannelData(0);
+/** Linear resampling of mono PCM to 16 kHz for Whisper. */
+function resampleTo16k(input: Float32Array, rate: number): Float32Array {
+  if (rate === 16000) return input;
+  const ratio = rate / 16000;
+  const out = new Float32Array(Math.floor(input.length / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const x = i * ratio;
+    const i0 = Math.floor(x);
+    const i1 = Math.min(input.length - 1, i0 + 1);
+    out[i] = input[i0] + (input[i1] - input[i0]) * (x - i0);
+  }
+  return out;
 }
 
+/** Boosts quiet recordings so the model hears them clearly. */
+function normalize(pcm: Float32Array) {
+  let max = 0;
+  for (let i = 0; i < pcm.length; i++) max = Math.max(max, Math.abs(pcm[i]));
+  if (max > 0 && max < 0.5) {
+    const g = Math.min(20, 0.9 / max);
+    for (let i = 0; i < pcm.length; i++) pcm[i] *= g;
+  }
+  return pcm;
+}
+
+const cleanText = (raw: string) => raw.replace(/\[[^\]]*\]|\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+
 /**
- * Records until the learner stops talking (or `timeoutMs`), then transcribes.
+ * Records raw audio until the learner stops talking (or `timeoutMs`), showing live partial
+ * results about every 1.5 s, then returns the final transcript.
  * Same result shape as the browser recognizer in speech.ts.
  */
 export function listenBuiltin(opts: {
@@ -110,65 +122,84 @@ export function listenBuiltin(opts: {
     } catch (e) {
       return { transcript: "", error: (e as Error).name === "NotAllowedError" ? "not-allowed" : "audio-capture" };
     }
-    const model = loadWhisper(); // start loading in parallel with recording
+    const modelP = loadWhisper(); // loads in parallel with recording (instant after the first time)
     const ctx = new AudioContext();
-    const an = ctx.createAnalyser();
-    an.fftSize = 512;
-    ctx.createMediaStreamSource(stream).connect(an);
-    const data = new Uint8Array(an.frequencyBinCount);
-    const rec = new MediaRecorder(stream);
-    const chunks: Blob[] = [];
-    rec.ondataavailable = (e) => chunks.push(e.data);
-    const stopped = new Promise<void>((r) => (rec.onstop = () => r()));
-    rec.start();
-
+    await ctx.resume().catch(() => {});
+    const source = ctx.createMediaStreamSource(stream);
+    // Raw sample capture (no compression/decoding step, which some headsets broke).
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const parts: Float32Array[] = [];
     let spoke = false;
     let lastLoud = Date.now();
+    proc.onaudioprocess = (e) => {
+      const ch = e.inputBuffer.getChannelData(0);
+      parts.push(new Float32Array(ch));
+      let p = 0;
+      for (let i = 0; i < ch.length; i += 4) p = Math.max(p, Math.abs(ch[i]));
+      const level = Math.min(1, p * 2.5);
+      opts.onLevel?.(level);
+      publishMicLevel(level);
+      if (level > 0.06) {
+        spoke = true;
+        lastLoud = Date.now();
+      }
+    };
+    source.connect(proc);
+    // ScriptProcessor only runs when connected to the output; a muted gain keeps it silent.
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    proc.connect(mute).connect(ctx.destination);
+
+    const snapshot = () => {
+      const len = parts.reduce((a, b) => a + b.length, 0);
+      const all = new Float32Array(len);
+      let o = 0;
+      for (const p of parts) {
+        all.set(p, o);
+        o += p.length;
+      }
+      return normalize(resampleTo16k(all, ctx.sampleRate));
+    };
+
+    // Live partial results so words can turn green while the learner is still talking.
+    let busy = false;
+    const live = setInterval(async () => {
+      if (busy || !spoke || cancelled) return;
+      busy = true;
+      try {
+        const run = await modelP;
+        const out = await run(snapshot());
+        const t = cleanText((Array.isArray(out) ? out[0]?.text : out.text) ?? "");
+        if (t && !cancelled) opts.onInterim(t);
+      } catch {}
+      busy = false;
+    }, 1500);
+
     const started = Date.now();
     await new Promise<void>((resolve) => {
       stopNow = resolve;
-      const tick = () => {
-        if (cancelled) return resolve();
-        an.getByteTimeDomainData(data);
-        let p = 0;
-        for (const v of data) p = Math.max(p, Math.abs(v - 128));
-        const level = Math.min(1, p / 50);
-        opts.onLevel?.(level);
-        publishMicLevel(level);
-        // Low threshold: some USB headsets record quietly.
-        if (level > 0.06) {
-          spoke = true;
-          lastLoud = Date.now();
-        }
+      const t = setInterval(() => {
         const now = Date.now();
-        if ((spoke && now - lastLoud > 1300) || now - started > opts.timeoutMs) return resolve();
-        requestAnimationFrame(tick);
-      };
-      tick();
+        if (cancelled || (spoke && now - lastLoud > 1400) || now - started > opts.timeoutMs) {
+          clearInterval(t);
+          resolve();
+        }
+      }, 100);
     });
-    rec.stop();
-    await stopped;
+    clearInterval(live);
+    proc.disconnect();
+    source.disconnect();
     stream.getTracks().forEach((t) => t.stop());
-    ctx.close().catch(() => {});
     publishMicLevel(0);
+    const pcm = snapshot();
+    ctx.close().catch(() => {});
     if (cancelled) return { transcript: "", error: "aborted" };
 
-    // Always transcribe, even if the mic was quiet: Whisper copes with low volume.
     opts.onInterim("… recognizing …");
     try {
-      const pcm = await toPcm16k(new Blob(chunks, { type: rec.mimeType }));
-      // Boost quiet recordings so the model hears them clearly.
-      let max = 0;
-      for (let i = 0; i < pcm.length; i++) max = Math.max(max, Math.abs(pcm[i]));
-      if (max > 0 && max < 0.5) {
-        const g = Math.min(20, 0.9 / max);
-        for (let i = 0; i < pcm.length; i++) pcm[i] *= g;
-      }
-      const run = await model;
+      const run = await modelP;
       const out = await run(pcm);
-      const raw = (Array.isArray(out) ? out[0]?.text : out.text) ?? "";
-      // Whisper marks silence like "[BLANK_AUDIO]" or "(silence)".
-      const text = raw.replace(/\[[^\]]*\]|\([^)]*\)/g, "").trim();
+      const text = cleanText((Array.isArray(out) ? out[0]?.text : out.text) ?? "");
       opts.onInterim(text);
       return text ? { transcript: text } : { transcript: "", error: spoke ? undefined : "no-speech" };
     } catch {
