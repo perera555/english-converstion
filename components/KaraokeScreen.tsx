@@ -3,6 +3,7 @@
 import { scoreSpeech, tokenize } from "@/lib/score";
 import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
 import RecognizerChip from "./RecognizerChip";
+import { useReadAlong } from "@/lib/use-guide";
 
 /**
  * Large karaoke display that stays on screen while audio plays.
@@ -25,7 +26,8 @@ export default function KaraokeScreen({
 }) {
   const micLevel = useMicLevel(listening);
   const words = tokenize(text);
-  const live = listening && heard ? scoreSpeech(text, heard).hits : null;
+  const live = listening && heard && !heard.startsWith("…") ? scoreSpeech(text, heard).hits : null;
+  const guide = useReadAlong(listening, words);
 
   return (
     <div className="sticky bottom-20 z-20 lg:bottom-4">
@@ -46,9 +48,12 @@ export default function KaraokeScreen({
         <p className="text-2xl font-black leading-snug sm:text-4xl">
           {words.map((w, k) => {
             let cls = "text-white/35";
-            if (live) cls = live[k] ? "text-emerald-300" : "text-white/40";
-            else if (listening) cls = "text-white/90";
-            else if (k < wordIndex) cls = "text-white";
+            if (listening) {
+              // Read-along karaoke for the learner's turn; recognized words turn green.
+              if (live?.[k]) cls = "text-emerald-300";
+              else if (k === guide) cls = "karaoke-word rounded-lg bg-gradient-to-r from-emerald-300 to-cyan-300 px-1.5 text-black";
+              else cls = k < guide ? "text-white" : "text-white/40";
+            } else if (k < wordIndex) cls = "text-white";
             else if (k === wordIndex) cls = "karaoke-word rounded-lg bg-gradient-to-r from-amber-300 to-pink-400 px-1.5 text-black";
             return (
               <span key={k} className={`transition-colors duration-150 ${cls}`}>

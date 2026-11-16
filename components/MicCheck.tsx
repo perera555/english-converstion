@@ -473,7 +473,7 @@ export default function MicCheck() {
 
               <div className="mt-3 rounded-xl bg-black/30 p-3 text-xs">
                 <div className="font-bold text-white">Recognizer</div>
-                <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   {ENGINES.map((e) => (
                     <button
                       key={e.id}

@@ -9,6 +9,8 @@ import { MicLevelBar, useMicLevel } from "@/lib/mic-level";
 import { requestVoiceCheck } from "@/lib/voice-check";
 import RecognizerChip from "./RecognizerChip";
 import DeviceBar from "./DeviceBar";
+import SelfCompare from "./SelfCompare";
+import { useReadAlong } from "@/lib/use-guide";
 import { getEngine, getMicDevice } from "@/lib/whisper";
 
 /* ------------------------------------------------------------ progress store */
@@ -110,7 +112,8 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
   const peakRef = useRef(0);
   peakRef.current = Math.max(peakRef.current, micLevel);
   const words = tokenize(tw.text);
-  const liveHits = phase === "listening" && heard ? scoreSpeech(tw.text, heard, { fuzzy: "names" }).hits : null;
+  const liveHits = phase === "listening" && heard && !heard.startsWith("…") ? scoreSpeech(tw.text, heard, { fuzzy: "names" }).hits : null;
+  const guide = useReadAlong(phase === "listening" || phase === "recording", words);
 
   const hear = async (rate: number) => {
     reset();
@@ -123,6 +126,8 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
   };
 
   const tryIt = async () => {
+    // "Self-check" chosen as the recognizer: use the twister's full record & compare panel.
+    if (getEngine() === "self") return recordSelf();
     reset();
     if (!recognitionSupported()) {
       setNotice("Voice checking needs Chrome, Edge, Safari (iPhone/Mac) or Samsung Internet. Please open the app in one of these browsers.");
@@ -311,7 +316,12 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
               {words.map((w, k) => {
                 let cls = "text-white/90";
                 if (phase === "speaking") cls = k < word ? "text-white" : k === word ? "karaoke-word rounded-lg bg-gradient-to-r from-amber-300 to-pink-400 px-1.5 text-black" : "text-white/35";
-                else if (liveHits) cls = liveHits[k] ? "text-emerald-300" : "text-white/35";
+                else if (phase === "listening" || phase === "recording") {
+                  // Read-along karaoke while the learner speaks; recognized words turn green.
+                  if (liveHits?.[k]) cls = "text-emerald-300";
+                  else if (k === guide) cls = "karaoke-word rounded-lg bg-gradient-to-r from-emerald-300 to-cyan-300 px-1.5 text-black";
+                  else cls = k < guide ? "text-white" : "text-white/35";
+                } else if (liveHits) cls = liveHits[k] ? "text-emerald-300" : "text-white/35";
                 else if (result) cls = result.hits[k] ? "text-emerald-300" : "text-rose-400 underline decoration-wavy";
                 return (
                   <span key={k} className={`transition-colors duration-150 ${cls}`}>
@@ -344,6 +354,19 @@ export default function TwisterGame({ chapters, twisters }: { chapters: Chapter[
             {phase === "review" && (
               <div className="animate-pop mt-6 rounded-3xl bg-white/5 p-5 text-center ring-1 ring-white/10">
                 <div className="font-black">🎧 Compare: did you say it right?</div>
+                {selfUrl && (
+                  <SelfCompare
+                    url={selfUrl}
+                    text={tw.text}
+                    playCorrect={async () => {
+                      stopSpeech();
+                      const h = speak(tw.text, { voice: voices.find((v) => v.name === voice), rate: 0.95, onWord: setWord });
+                      setPhase("review");
+                      await h.done;
+                      setWord(-1);
+                    }}
+                  />
+                )}
                 <div className="mt-3 flex flex-wrap justify-center gap-2">
                   <button onClick={() => selfUrl && new Audio(selfUrl).play()} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold">
                     ▶ Hear my voice

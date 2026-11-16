@@ -14,22 +14,23 @@ const ENGINE_KEY = "ec-recognizer";
 const DEVICE_KEY = "ec-mic-device";
 
 /** "builtin" = Whisper tiny (fast, ~40 MB); "builtin-plus" = Whisper base (more accurate, ~75 MB). */
-export type Engine = "browser" | "builtin" | "builtin-plus";
+export type Engine = "browser" | "builtin" | "builtin-plus" | "self";
 export const ENGINES: { id: Engine; label: string; note: string }[] = [
   { id: "browser", label: "🌐 Browser", note: "fast · Chrome/Edge/Safari" },
   { id: "builtin", label: "🧠 Built-in", note: "works with USB/Bluetooth · 40 MB once" },
   { id: "builtin-plus", label: "🧠 Built-in+", note: "most accurate · 75 MB once" },
+  { id: "self", label: "🎧 Self-check", note: "no recognition · hear yourself & compare" },
 ];
-const MODELS: Record<Exclude<Engine, "browser">, string> = {
+const MODELS = {
   builtin: "Xenova/whisper-tiny.en",
   "builtin-plus": "Xenova/whisper-base.en",
-};
-export const isBuiltin = (e: Engine) => e !== "browser";
+} as const;
+export const isBuiltin = (e: Engine) => e === "builtin" || e === "builtin-plus";
 
 export function getEngine(): Engine {
   try {
     const v = localStorage.getItem(ENGINE_KEY);
-    return v === "builtin" || v === "builtin-plus" ? v : "browser";
+    return v === "builtin" || v === "builtin-plus" || v === "self" ? v : "browser";
   } catch {
     return "browser";
   }
@@ -86,6 +87,77 @@ export function loadWhisper(onProgress?: (pct: number) => void, engine: Engine =
     delete loadingByModel[MODEL];
   });
   return loading;
+}
+
+/**
+ * Self-check "recognizer": records the learner until they stop talking, then plays the
+ * recording back so they can compare it with the computer's voice. No words are recognized.
+ */
+export function listenSelf(opts: { timeoutMs: number }): { done: Promise<{ transcript: string; error?: string }>; cancel: () => void } {
+  let cancelled = false;
+  let stopNow: () => void = () => {};
+  const done = (async () => {
+    let stream: MediaStream;
+    const dev = getMicDevice();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: dev === "default" ? true : { deviceId: { ideal: dev } } });
+    } catch (e) {
+      return { transcript: "", error: (e as Error).name === "NotAllowedError" ? "not-allowed" : "audio-capture" };
+    }
+    const ctx = new AudioContext();
+    const an = ctx.createAnalyser();
+    an.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const data = new Uint8Array(an.frequencyBinCount);
+    const rec = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => chunks.push(e.data);
+    const stopped = new Promise<void>((r) => (rec.onstop = () => r()));
+    rec.start();
+    let spoke = false;
+    let lastLoud = Date.now();
+    const started = Date.now();
+    await new Promise<void>((resolve) => {
+      stopNow = resolve;
+      const t = setInterval(() => {
+        an.getByteTimeDomainData(data);
+        let p = 0;
+        for (const v of data) p = Math.max(p, Math.abs(v - 128));
+        const level = Math.min(1, p / 50);
+        publishMicLevel(level);
+        if (level > 0.06) {
+          spoke = true;
+          lastLoud = Date.now();
+        }
+        const now = Date.now();
+        if (cancelled || (spoke && now - lastLoud > 1200) || now - started > opts.timeoutMs) {
+          clearInterval(t);
+          resolve();
+        }
+      }, 60);
+    });
+    rec.stop();
+    await stopped;
+    stream.getTracks().forEach((t) => t.stop());
+    ctx.close().catch(() => {});
+    publishMicLevel(0);
+    if (cancelled) return { transcript: "", error: "aborted" };
+    // Play the learner's recording straight back.
+    await new Promise<void>((r) => {
+      const a = new Audio(URL.createObjectURL(new Blob(chunks, { type: rec.mimeType })));
+      a.onended = () => r();
+      a.onerror = () => r();
+      a.play().catch(() => r());
+    });
+    return { transcript: "", error: spoke ? "self" : "self-silent" };
+  })();
+  return {
+    done,
+    cancel: () => {
+      cancelled = true;
+      stopNow();
+    },
+  };
 }
 
 /** Linear resampling of mono PCM to 16 kHz for Whisper. */

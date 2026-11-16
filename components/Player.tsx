@@ -118,6 +118,7 @@ export default function Player({ conv, videos, search }: { conv: Conversation; v
     const r = await h.done;
     setListening(false);
     if (runRef.current !== token) return null;
+    if (r.error === "self") return null; // self-check: the recording was played back, nothing to score
     const problem = micErrorMessage(r.error, r.transcript);
     if (problem) {
       setNotice(problem);

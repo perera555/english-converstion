@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { scoreSpeech, tokenize } from "./score";
 import { pingActivity } from "./practice";
-import { getEngine, isBuiltin, listenBuiltin } from "./whisper";
+import { getEngine, isBuiltin, listenBuiltin, listenSelf } from "./whisper";
 
 /* ---------------------------------------------------------------- voices */
 
@@ -200,6 +200,9 @@ function getRecognitionCtor(): (new () => RecognitionLike) | undefined {
 
 /** A clear, actionable message for a speech-recognition error (or an empty result). */
 export function micErrorMessage(error: string | undefined, transcript: string): string | null {
+  if (error === "self") return null; // self-check: nothing to recognize
+  if (error === "self-silent")
+    return "🔇 Your recording was silent: the microphone isn't sending sound. Check the mic plug, mute switch and Windows Input volume, then open 🎧 Mic check.";
   if (error === "not-allowed" || error === "service-not-allowed")
     return "🚫 Microphone is blocked. Click the 🔒 / mic icon in the address bar, choose Allow, then try again.";
   if (error === "audio-capture") return "🎙️ No microphone found. Plug in your headset or earbuds, then open 🎧 Mic check at the top to test it.";
@@ -218,7 +221,7 @@ export function micErrorMessage(error: string | undefined, transcript: string): 
 }
 
 export function recognitionSupported() {
-  return isBuiltin(getEngine()) || !!getRecognitionCtor();
+  return getEngine() !== "browser" || !!getRecognitionCtor();
 }
 
 export function listen(opts: {
@@ -230,6 +233,14 @@ export function listen(opts: {
   // Make sure no other mic recording (e.g. the Mic check meter) is running: some USB/Bluetooth
   // headsets give silence to every stream when two recordings run at once.
   window.dispatchEvent(new CustomEvent("release-mic"));
+  // Self-check: record and play back, no recognition.
+  if (getEngine() === "self") {
+    pingActivity();
+    const p = setInterval(pingActivity, 1000);
+    const h = listenSelf({ timeoutMs: opts.timeoutMs });
+    h.done.finally(() => clearInterval(p));
+    return h;
+  }
   // Built-in recognizer (Whisper in the browser) when the learner chose it in Mic check.
   if (isBuiltin(getEngine())) {
     pingActivity();

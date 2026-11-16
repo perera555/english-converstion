@@ -113,7 +113,10 @@ export default function EssayReader({ essay, videos, search }: { essay: Essay; v
           const r = await l.done;
           setListening(false);
           if (runRef.current !== token) return;
-          const problem = micErrorMessage(r.error, r.transcript);
+          const problem = r.error === "self" ? null : micErrorMessage(r.error, r.transcript);
+          if (r.error === "self") {
+            // self-check: the recording was played back, nothing to score
+          } else
           if (problem) {
             setNotice(problem);
             if (r.error && r.error !== "no-speech") {
